@@ -1,4 +1,4 @@
-from typing import override
+from typing import Any, Dict, override
 from anthropic.types import ToolParam
 
 from tools import Tool
@@ -38,11 +38,12 @@ class CommitteeDetailsOutputTool(Tool):
                             },
                             "format": {
                                 "type": "string",
-                                "description": "One of document-links|embedded-html|document-library|unknown|other. How the agenda is stored. document-links: links to external files. embedded-html: links to webpage that displays the agenda."
+                                "enum": ["document-links","embedded-html","unknown","other"],
+                                "description": " How the agenda is stored. document-links: links to external files. embedded-html: links to webpage that displays the agenda."
                             },
                             "notes": {
                                 "type": "string",
-                                "description": "Concise dditional information for locating the agendas."
+                                "description": "Concise additional information for locating the agendas."
                             }
 
                         }
@@ -50,3 +51,6 @@ class CommitteeDetailsOutputTool(Tool):
                 }
             }
         }
+
+    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        raise Exception("This should not be called")

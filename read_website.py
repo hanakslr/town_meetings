@@ -18,7 +18,7 @@ load_dotenv()
 
 SCHEMA_VERSION = 1
 
-GENERAL_TOOLS = {"scrape_webpage": Bs4SiteScraperTool}
+GENERAL_TOOLS = {"scrape_webpage": Bs4SiteScraperTool()}
 
 
 @dataclass
@@ -33,7 +33,6 @@ class TownWebsiteAnalyzer():
 
     client: AsyncAnthropic
     tool_usage: dict[str, ToolUseBlock]
-    tools: dict[str, type[Tool]]
 
     town_name: str
     state: str
@@ -104,6 +103,8 @@ class TownWebsiteAnalyzer():
                     result = await tool.execute(tool_params)
 
                     new_messages = previous_messages.copy()
+
+
                     new_messages.append({"role": "assistant", "content": content})
                     new_messages.append(
                         {
@@ -117,6 +118,13 @@ class TownWebsiteAnalyzer():
                             ],
                         }
                     )
+
+                    print("Assistant:", content)
+                    print("Response:", new_messages[-1] )
+
+
+                    # new_messages_with_last_cached = new_messages.copy()
+                    # new_messages_with_last_cached[-1]["content"][0]["cache_control"] = {"type": "ephemeral"}
 
                     new_message = await self.client.messages.create(
                         model="claude-3-7-sonnet-20250219",
@@ -244,10 +252,11 @@ class TownWebsiteAnalyzer():
                 "role": "user",
                 "content": f"""
 
-            The official website for the {comittee.name} of {self.town_name}, {self.state} is {comittee.url}. This is a municipal board, committee, or commission.
+            The official webpage for the {comittee.name} of {self.town_name}, {self.state} is {comittee.url}. This is a municipal board, committee, or commission.
 
-            Analyze the website to find the meeting schedule and location for this group, as well as how and where the agendas are
-            stored. Public municipal bodies are required by law to publish their agendas and your job is to report where they can be found.
+            Analyze the webpage to find the meeting schedule and location for this group, as well as how and where the agendas are
+            stored. Public municipal bodies are required by law to publish their agendas and your job is to report where they can be found. These will
+            only ever be referred to as "agendas" or "minutes" and will be available somewhere on the page, either directly or via a link.
 
             Some groups meet regularly and others only meet as needed. If the schedule and location information is not readily available, just leave what cannot 
             be found empty. If they do meet regularly the information will be easily found. No need to check specific documents.
@@ -259,9 +268,9 @@ class TownWebsiteAnalyzer():
             }
         ]
 
-        tools: dict[str, type[Tool]] = {
+        tools: dict[str, Tool] = {
             **GENERAL_TOOLS,
-            "committee_meeting_times_summary": CommitteeDetailsOutputTool
+            "committee_meeting_times_summary": CommitteeDetailsOutputTool()
         }
 
         # Create message with tool that can use BeautifulSoup

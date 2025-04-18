@@ -11,12 +11,21 @@ from tools import Tool
 class Bs4SiteScraperTool(Tool):
     """A tool class for analyzing webpages using BeautifulSoup."""
 
+
+    previous_text_blobs: list[str]
+    """Store previous text_blobs"""
+
+    def __init__(self):
+        self.previous_text_blobs = []
+
     @classmethod
     def get_tool_definition(cls) -> ToolParam:
         """Return the tool definition that can be passed to Claude."""
         return {
             "name": "scrape_webpage",
-            "description": "Scrape a webpage using BeautifulSoup to extract specific elements",
+            "description": """Scrape a webpage using BeautifulSoup to extract specific elements. This tool returns
+                a lot of information so define the extraction filters whenever possible.
+                """,
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -24,6 +33,19 @@ class Bs4SiteScraperTool(Tool):
                     "selector": {
                         "type": "string",
                         "description": "CSS selector to extract specific elements (optional)",
+                    },
+                    "extraction_filters": {
+                        "type": "object",
+                        "properties": {
+                            "links": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "description": "Filtering term for links"
+                                },
+                                "description": "Array of strings to filter links by (only links containing these strings as their display text will be included)",
+                            },
+                        }
                     },
                     "extract_links": {
                         "type": "boolean",
@@ -43,14 +65,17 @@ class Bs4SiteScraperTool(Tool):
         }
         
 
-    @classmethod
-    async def execute(cls, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the tool with the given parameters."""
         url = params.get("url")
         selector = params.get("selector")
         extract_links = params.get("extract_links", False)
         extract_text = params.get("extract_text", False)
         extract_navigation = params.get("extract_navigation", False)
+        extraction_filters = params.get("extraction_filters", {})
+
+        if extract_links and not extraction_filters:
+            raise Exception("Required extraction filters")
 
         try:
             # Create SSL context with default settings
@@ -106,8 +131,19 @@ class Bs4SiteScraperTool(Tool):
                     for a in soup.find_all("a", href=True):
                         href = a["href"]
                         text = a.get_text(strip=True)
-                        if href and text:
-                            links.append({"url": href, "text": text})
+                        # Skip links without href or text
+                        if not href or not text:
+                            continue
+                            
+                        # Apply filters if provided
+                        if extraction_filters.get("links", None):
+                            # Check if any filter string is in either the href or text
+                            if not any(filter_str.lower() in href.lower() or 
+                                      filter_str.lower() in text.lower() 
+                                      for filter_str in extraction_filters.get("links")):
+                                continue
+                                
+                        links.append({"url": href, "text": text})
                     result["links"] = links
 
                 # Extract main text if requested
@@ -123,8 +159,11 @@ class Bs4SiteScraperTool(Tool):
                             continue
 
                         text = element.get_text(separator="\n", strip=True)
-                        if len(text) > 100:
+                        if len(text) > 100 and not text in self.previous_text_blobs:
                             main_text.append(text)
+                            self.previous_text_blobs.append(text)
+                        elif text in self.previous_text_blobs:
+                            print(f"Skipping including {len(text)} prev included chars")
 
                     result["main_text"] = main_text[:5]
 
