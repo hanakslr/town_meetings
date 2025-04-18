@@ -1,11 +1,12 @@
 import json
+import asyncio
 import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from anthropic import Anthropic
+from anthropic import AsyncAnthropic
 from anthropic.types import Message, ToolUseBlock
 from dotenv import load_dotenv
 
@@ -21,13 +22,13 @@ SCHEMA_VERSION = 1
 class Committee():
     name: str
     url: Optional[str]
-    details: Optional[dict[str, Any]]  # TODO type this
+    details: Optional[dict[str, Any]]  = None
 
 
 class TownWebsiteAnalyzer():
     """Main class for analyzing town websites using Claude and tools."""
 
-    client: Anthropic
+    client: AsyncAnthropic
     tool_usage: dict[str, ToolUseBlock]
     tools: dict[str, Tool]
 
@@ -38,7 +39,7 @@ class TownWebsiteAnalyzer():
     committees: Optional[list[Committee]]
 
     def __init__(self, town_name: str, state: str):
-        self.client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        self.client = AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
         self.tool_usage: dict[str, ToolUseBlock] = {}
         self.tools = {"scrape_webpage": Bs4SiteScraperTool()}
         self.town_name = town_name
@@ -57,10 +58,20 @@ class TownWebsiteAnalyzer():
 
     def resume_from(self, previous_result):
         for key, value in previous_result.items():
-            if hasattr(self, key):
+            if key == "committees" and value is not None:
+                self.committees = []
+                for c in value:
+                    committee_data = {
+                        "name": c["name"],
+                        "url": c["url"],
+                    }
+                    if "details" in c:
+                        committee_data["details"] = c["details"]
+                    self.committees.append(Committee(**committee_data))
+            elif hasattr(self, key):
                 setattr(self, key, value)
 
-    def handle_tool_calls(
+    async def handle_tool_calls(
         self, message: Message, previous_messages=Optional[list[Message]]
     ):
         """Handle any tool calls in a Claude message."""
@@ -84,7 +95,7 @@ class TownWebsiteAnalyzer():
                 if tool_name in self.tools:
                     # Execute the tool
                     tool = self.tools[tool_name]
-                    result = tool.execute(tool_params)
+                    result = await tool.execute(tool_params)
 
                     print(f"Got result for {item.id}")
 
@@ -103,7 +114,7 @@ class TownWebsiteAnalyzer():
                         }
                     )
 
-                    new_message = self.client.messages.create(
+                    new_message = await self.client.messages.create(
                         model="claude-3-7-sonnet-20250219",
                         max_tokens=4000,
                         temperature=0,
@@ -118,7 +129,7 @@ class TownWebsiteAnalyzer():
                     print(f"Calling again with {new_message}")
 
                     # Recursively handle any further tool calls
-                    return self.handle_tool_calls(new_message, new_messages)
+                    return await self.handle_tool_calls(new_message, new_messages)
 
         # If no tool calls or we've completed the process, return the final results
         if not tool_call_found:
@@ -138,7 +149,7 @@ class TownWebsiteAnalyzer():
             except Exception as e:
                 return {"summary": final_content, "error": str(e)}
 
-    def find_town_website(self):
+    async def find_town_website(self):
         """Use Claude to find the official website for a town."""
         location = f"{self.town_name}, {self.state}"
 
@@ -147,7 +158,7 @@ class TownWebsiteAnalyzer():
         Please return only the URL without any additional text or explanation.
         """
 
-        message = self.client.messages.create(
+        message = await self.client.messages.create(
             model="claude-3-7-sonnet-20250219",
             max_tokens=100,
             temperature=0,
@@ -163,7 +174,7 @@ class TownWebsiteAnalyzer():
         else:
             raise Exception("Did not find website URL")
 
-    def find_town_orgs(self):
+    async def find_town_orgs(self):
         try:
             # Initial message to Claude with tools
             initial_messages = [
@@ -195,7 +206,7 @@ class TownWebsiteAnalyzer():
             ]
 
             # Create message with tool that can use BeautifulSoup
-            response = self.client.messages.create(
+            response = await self.client.messages.create(
                 model="claude-3-7-sonnet-20250219",
                 max_tokens=4000,
                 temperature=0,
@@ -206,7 +217,7 @@ class TownWebsiteAnalyzer():
             )
 
             # Process the message and handle tool calls
-            result = self.handle_tool_calls(response, initial_messages)
+            result = await self.handle_tool_calls(response, initial_messages)
 
             committees = result.get("committees", None)
 
@@ -218,9 +229,10 @@ class TownWebsiteAnalyzer():
         except Exception as e:
             return {"error": str(e)}
 
-    def find_org_details(self, comittee: Committee):
+    async def find_org_details(self, comittee: Committee):
         """Given a committee, commission, or board name and its website URL
         extract details about when it meets and its agendas"""
+        print(f"Finding details for {comittee=}")
 
         try:
             # Initial message to Claude with tools
@@ -255,7 +267,7 @@ class TownWebsiteAnalyzer():
             ]
 
             # Create message with tool that can use BeautifulSoup
-            response = self.client.messages.create(
+            response = await self.client.messages.create(
                 model="claude-3-7-sonnet-20250219",
                 max_tokens=4000,
                 temperature=0,
@@ -266,24 +278,25 @@ class TownWebsiteAnalyzer():
             )
 
             # Process the message and handle tool calls
-            result = self.handle_tool_calls(response, initial_messages)
+            result = await self.handle_tool_calls(response, initial_messages)
 
             return result
 
         except Exception as e:
             return {"error": str(e)}
 
-    def run_workflow(self) -> Dict[str, Any]:
+    async def run_workflow(self) -> Dict[str, Any]:
         """Run the full town website analysis workflow."""
         if not self.website_url:
-            self.find_town_website()
+            await self.find_town_website()
 
         if not self.committees:
-            self.find_town_orgs()
+            await self.find_town_orgs()
 
-        # for committee in self.committees:
-        #     if not committee.details:
-        #         self.find_org_details(committee)
+        for committee in self.committees:
+            if not committee.details:
+                await self.find_org_details(committee)
+                raise Exception("Stop after 1")
 
 
 if __name__ == "__main__":
@@ -313,7 +326,9 @@ if __name__ == "__main__":
                     previous_result = json.load(f)
                 analyzer.resume_from(previous_result)
 
-        analyzer.run_workflow()
+                print(f"Resuming with: {analyzer.__dict__}")
+
+        asyncio.run(analyzer.run_workflow())
     finally:
         # Save results to file
         with open(

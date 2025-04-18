@@ -10,5 +10,5 @@ class Tool(ABC):
         raise Exception("Subclass must implement.")
 
     @abstractmethod
-    def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         raise Exception("Subclass must implement")
