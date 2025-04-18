@@ -1,0 +1,7 @@
+target-version = "py312"
+
+[lint]
+select = [
+    # isort
+    "I",
+]
