@@ -1,21 +1,24 @@
-import json
 import asyncio
+import json
 import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from anthropic import AsyncAnthropic
-from anthropic.types import Message, ToolUseBlock
+from anthropic import AsyncAnthropic, NotGiven
+from anthropic.types import Message, ToolParam, ToolUseBlock, tool_param
 from dotenv import load_dotenv
 
 from tools import Tool
+from tools.outputs import CommitteeDetailsOutputTool
 from tools.site_scraper import Bs4SiteScraperTool
 
 load_dotenv()
 
 SCHEMA_VERSION = 1
+
+GENERAL_TOOLS = {"scrape_webpage": Bs4SiteScraperTool}
 
 
 @dataclass
@@ -30,7 +33,7 @@ class TownWebsiteAnalyzer():
 
     client: AsyncAnthropic
     tool_usage: dict[str, ToolUseBlock]
-    tools: dict[str, Tool]
+    tools: dict[str, type[Tool]]
 
     town_name: str
     state: str
@@ -41,7 +44,6 @@ class TownWebsiteAnalyzer():
     def __init__(self, town_name: str, state: str):
         self.client = AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
         self.tool_usage: dict[str, ToolUseBlock] = {}
-        self.tools = {"scrape_webpage": Bs4SiteScraperTool()}
         self.town_name = town_name
         self.state = state
         self.website_url = None
@@ -72,7 +74,7 @@ class TownWebsiteAnalyzer():
                 setattr(self, key, value)
 
     async def handle_tool_calls(
-        self, message: Message, previous_messages=Optional[list[Message]]
+        self, tools: dict[str,Tool], message: Message, previous_messages=Optional[list[Message]], 
     ):
         """Handle any tool calls in a Claude message."""
         if previous_messages is None:
@@ -92,12 +94,14 @@ class TownWebsiteAnalyzer():
                 self.tool_usage[item.id] = item
                 print(f"Running {tool_name} with {tool_params}")
 
-                if tool_name in self.tools:
-                    # Execute the tool
-                    tool = self.tools[tool_name]
-                    result = await tool.execute(tool_params)
+                if tool_name in tools:
+                    tool = tools[tool_name]
 
-                    print(f"Got result for {item.id}")
+                    # This is our last stop for structured output.
+                    if tool.is_structured_output():
+                        return tool_params
+
+                    result = await tool.execute(tool_params)
 
                     new_messages = previous_messages.copy()
                     new_messages.append({"role": "assistant", "content": content})
@@ -120,16 +124,14 @@ class TownWebsiteAnalyzer():
                         temperature=0,
                         system="You are an expert in analyzing municipal government websites. You locate information to help keep citizens informed and engaged.",
                         messages=new_messages,
-                        tools=[
-                            tool.get_tool_definition() for tool in self.tools.values()
-                        ],
+                        tools=[tool.get_tool_definition() for tool in tools.values()],
                         tool_choice={"type": "auto"},
                     )
 
                     print(f"Calling again with {new_message}")
 
                     # Recursively handle any further tool calls
-                    return await self.handle_tool_calls(new_message, new_messages)
+                    return await self.handle_tool_calls(tools, new_message, new_messages)
 
         # If no tool calls or we've completed the process, return the final results
         if not tool_call_found:
@@ -205,6 +207,8 @@ class TownWebsiteAnalyzer():
                 }
             ]
 
+            tools = [tool.get_tool_definition() for tool in GENERAL_TOOLS.values()]
+
             # Create message with tool that can use BeautifulSoup
             response = await self.client.messages.create(
                 model="claude-3-7-sonnet-20250219",
@@ -212,12 +216,12 @@ class TownWebsiteAnalyzer():
                 temperature=0,
                 system="You are an expert in analyzing municipal government websites. Use the provided tools to extract information about town committees. You have access to tools, but only use them when necessary. If a tool is not required, respond as normal.",
                 messages=initial_messages,
-                tools=[tool.get_tool_definition() for tool in self.tools.values()],
+                tools=tools,
                 tool_choice={"type": "auto"},
             )
 
             # Process the message and handle tool calls
-            result = await self.handle_tool_calls(response, initial_messages)
+            result = await self.handle_tool_calls(tools, response, initial_messages)
 
             committees = result.get("committees", None)
 
@@ -234,56 +238,48 @@ class TownWebsiteAnalyzer():
         extract details about when it meets and its agendas"""
         print(f"Finding details for {comittee=}")
 
-        try:
-            # Initial message to Claude with tools
-            initial_messages = [
-                {
-                    "role": "user",
-                    "content": f"""
+        # Initial message to Claude with tools
+        initial_messages = [
+            {
+                "role": "user",
+                "content": f"""
 
-                The official website for the {comittee.name} of {self.town_name}, {self.state} is {comittee.url}. This is a municipal board, committee, or commission.
+            The official website for the {comittee.name} of {self.town_name}, {self.state} is {comittee.url}. This is a municipal board, committee, or commission.
 
-                Analyze the website to find the meeting schedule and location for this group, as well as how and where the agendas are
-                stored. Public municipal bodies are required by law to publish their agendas and your job is to report where they can be found.
+            Analyze the website to find the meeting schedule and location for this group, as well as how and where the agendas are
+            stored. Public municipal bodies are required by law to publish their agendas and your job is to report where they can be found.
 
-                Some groups meet regularly and others only meet as needed. If the information is not readily available, just leave what cannot 
-                be found empty. If they do meet regularly the information will be easily found.
+            Some groups meet regularly and others only meet as needed. If the schedule and location information is not readily available, just leave what cannot 
+            be found empty. If they do meet regularly the information will be easily found. No need to check specific documents.
 
-                Each group handles this differently.
-                
-                Return your findings as a structured JSON with this format:
-                {{
-                    "schedule": "When the group regularly meets - as a string, like 1st and 3rd Tuesdays at 7pm",
-                    "meeting_location": "Where the group typically meets - as a string".
-                    "agendas": {{
-                        "type": "pdf-links|embedded-html|document-library|calendar|unknown",
-                        "location": "URL where documents are found",
-                        "pattern": "Pattern for identifying documents (if applicable)",
-                        "notes": "Additional information"
-                      }}
-                }}
-                """,
-                }
-            ]
+            Each group handles this differently.
+            
+            Return your findings using the committee_meeting_times_summary tool.
+            """,
+            }
+        ]
 
-            # Create message with tool that can use BeautifulSoup
-            response = await self.client.messages.create(
-                model="claude-3-7-sonnet-20250219",
-                max_tokens=4000,
-                temperature=0,
-                system="You are an expert in analyzing municipal government websites to help citizens stay informed and engaged on whats happens when. Use the provided tools to extract information about town committees. You have access to tools, but only use them when necessary. If a tool is not required, respond as normal.",
-                messages=initial_messages,
-                tools=[tool.get_tool_definition() for tool in self.tools.values()],
-                tool_choice={"type": "auto"},
-            )
+        tools: dict[str, type[Tool]] = {
+            **GENERAL_TOOLS,
+            "committee_meeting_times_summary": CommitteeDetailsOutputTool
+        }
 
-            # Process the message and handle tool calls
-            result = await self.handle_tool_calls(response, initial_messages)
+        # Create message with tool that can use BeautifulSoup
+        response = await self.client.messages.create(
+            model="claude-3-7-sonnet-20250219",
+            max_tokens=4000,
+            temperature=0,
+            system="You are an expert in analyzing municipal government websites to help citizens stay informed and engaged on whats happens when. Use the provided tools to extract information about town committees. You have access to tools, but only use them when necessary. If a tool is not required, respond as normal.",
+            messages=initial_messages,
+            tools=[tool.get_tool_definition() for tool in tools.values()],
+            tool_choice={"type": "auto"},
+        )
 
-            return result
+        # Process the message and handle tool calls
+        result = await self.handle_tool_calls(tools, response, initial_messages)
 
-        except Exception as e:
-            return {"error": str(e)}
+        comittee.details = result
+
 
     async def run_workflow(self) -> Dict[str, Any]:
         """Run the full town website analysis workflow."""
@@ -296,8 +292,7 @@ class TownWebsiteAnalyzer():
         for committee in self.committees:
             if not committee.details:
                 await self.find_org_details(committee)
-                raise Exception("Stop after 1")
-
+                asyncio.sleep(60)
 
 if __name__ == "__main__":
     import os
@@ -325,8 +320,6 @@ if __name__ == "__main__":
                 with open(latest, 'r') as f:
                     previous_result = json.load(f)
                 analyzer.resume_from(previous_result)
-
-                print(f"Resuming with: {analyzer.__dict__}")
 
         asyncio.run(analyzer.run_workflow())
     finally:

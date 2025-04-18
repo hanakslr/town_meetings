@@ -1,7 +1,6 @@
+import asyncio
 from typing import Any, Dict
 
-import requests
-import asyncio
 import aiohttp
 from anthropic.types import ToolParam
 from bs4 import BeautifulSoup
@@ -12,10 +11,8 @@ from tools import Tool
 class Bs4SiteScraperTool(Tool):
     """A tool class for analyzing webpages using BeautifulSoup."""
 
-    def __init__(self):
-        pass
-
-    def get_tool_definition(self) -> ToolParam:
+    @classmethod
+    def get_tool_definition(cls) -> ToolParam:
         """Return the tool definition that can be passed to Claude."""
         return {
             "name": "scrape_webpage",
@@ -46,7 +43,8 @@ class Bs4SiteScraperTool(Tool):
         }
         
 
-    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    @classmethod
+    async def execute(cls, params: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the tool with the given parameters."""
         url = params.get("url")
         selector = params.get("selector")

@@ -5,10 +5,17 @@ from anthropic.types import ToolParam
 
 
 class Tool(ABC):
+    @classmethod
+    def is_structured_output(cls) -> bool:
+        return False
+    
+    @classmethod
     @abstractmethod
-    def get_tool_definition(self) -> ToolParam:
+    def get_tool_definition(cls) -> ToolParam:
         raise Exception("Subclass must implement.")
 
+    
+    @classmethod
     @abstractmethod
-    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(cls, params: Dict[str, Any]) -> Dict[str, Any]:
         raise Exception("Subclass must implement")
