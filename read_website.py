@@ -55,6 +55,11 @@ class TownWebsiteAnalyzer():
             "committees": self.committees
         }
 
+    def resume_from(self, previous_result):
+        for key, value in previous_result.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+
     def handle_tool_calls(
         self, message: Message, previous_messages=Optional[list[Message]]
     ):
@@ -294,21 +299,20 @@ if __name__ == "__main__":
         os.makedirs(directory_path)
 
     analyzer = TownWebsiteAnalyzer(town_name=town_name, state=state)
-
-    # Pick up where we left off
-    if resume_latest:
-        import glob
-
-        files = glob.glob(f"{directory_path}/s{SCHEMA_VERSION}_*.json")
-
-        if files:
-            latest = max(files, key=os.path.getctime)
-            print(f"Resuming from: {latest}")
-            previous_result = json.load(latest)
-            print(previous_result)
-            raise Exception("All done")
-
     try:
+        # Pick up where we left off
+        if resume_latest:
+            import glob
+
+            files = glob.glob(f"{directory_path}/s{SCHEMA_VERSION}_*.json")
+
+            if files:
+                latest = max(files, key=os.path.getctime)
+                print(f"Resuming from: {latest}")
+                with open(latest, 'r') as f:
+                    previous_result = json.load(f)
+                analyzer.resume_from(previous_result)
+
         analyzer.run_workflow()
     finally:
         # Save results to file
