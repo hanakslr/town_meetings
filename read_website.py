@@ -8,6 +8,8 @@ from typing import Any, Dict, Optional
 from anthropic import AsyncAnthropic
 from anthropic.types import ToolUseBlock
 from dotenv import load_dotenv
+from prompt_toolkit import PromptSession
+from prompt_toolkit.validation import Validator, ValidationError
 
 from tools import Tool, handle_tool_calls
 from tools.outputs import AllOrgsOutputTool, CommitteeDetailsOutputTool
@@ -19,12 +21,37 @@ SCHEMA_VERSION = 2
 
 GENERAL_TOOLS = {Bs4SiteScraperTool.name: Bs4SiteScraperTool()}
 
+# Predefined skip reasons
+SKIP_REASONS = [
+    "Overview URL is minutes URL",
+    "No meeting information available",
+    "Inactive",
+    "Not important",
+    "Information is outdated",
+    "Other (specify)"
+]
+
+class SkipReasonValidator(Validator):
+    def validate(self, document):
+        text = document.text.strip()
+        if not text:
+            raise ValidationError(message="Please enter a reason or 'c' to continue")
+        if text.lower() == 'c':
+            return
+        try:
+            index = int(text)
+            if index < 1 or index > len(SKIP_REASONS):
+                raise ValidationError(message=f"Please enter a number between 1 and {len(SKIP_REASONS)} or 'c' to continue")
+        except ValueError:
+            raise ValidationError(message="Please enter a valid number or 'c' to continue")
+
 
 @dataclass
 class Committee():
     name: str
     overview_url: Optional[str]
     agendas_url: Optional[str]
+    skip_reason: Optional[str]
     details: Optional[dict[str, Any]]  = None
 
 
@@ -210,10 +237,33 @@ class TownWebsiteAnalyzer():
         if not self.committees:
             await self.find_town_orgs()
 
-        raise Exception("stop")
-
+        session = PromptSession()
         for committee in self.committees:
-            if not committee.details:
+            if not committee.details and not committee.skip_reason:
+                # Display committee info and skip reasons
+                print(f"\nCommittee: {committee.name}")
+                print("URL:", committee.overview_url)
+                print("Agenda URL:", committee.agendas_url)
+                print("\nSkip reasons:")
+                for i, reason in enumerate(SKIP_REASONS, 1):
+                    print(f"{i}. {reason}")
+                print("c. Continue with analysis")
+                
+                # Get user input
+                response = (await session.prompt_async(
+                    "Enter a number to skip or 'c' to continue: ",
+                    validator=SkipReasonValidator()
+                )).strip().lower()
+                
+                if response != 'c':
+                    index = int(response) - 1
+                    if index == len(SKIP_REASONS) - 1:  # "Other" option
+                        custom_reason = (await session.prompt_async("Please specify the reason: ")).strip()
+                        committee.skip_reason = custom_reason
+                    else:
+                        committee.skip_reason = SKIP_REASONS[index]
+                    continue
+
                 await self.find_org_details(committee)
                 await asyncio.sleep(30)
 
@@ -258,8 +308,6 @@ if __name__ == "__main__":
                 with open(latest, 'r') as f:
                     previous_result = json.load(f)
                 analyzer.resume_from(previous_result)
-
-        raise Exception("done")
 
         asyncio.run(analyzer.run_workflow())
     finally:
