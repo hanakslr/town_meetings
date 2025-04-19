@@ -10,11 +10,13 @@ from tools import Tool
 
 class Bs4SiteScraperTool(Tool):
     """A tool class for analyzing webpages using BeautifulSoup."""
+    name = "scrape_webpage"
 
 
     previous_text_blobs: list[str]
     previous_urls: list[dict[str, str]]
     """Store previous text_blobs"""
+
 
     def __init__(self):
         self.previous_text_blobs = []
@@ -24,7 +26,7 @@ class Bs4SiteScraperTool(Tool):
     def get_tool_definition(cls) -> ToolParam:
         """Return the tool definition that can be passed to Claude."""
         return {
-            "name": "scrape_webpage",
+            "name": Bs4SiteScraperTool.name,
             "description": """Scrape a webpage using BeautifulSoup to extract specific elements. Identical information that is in a previous call use may be filtered out and not returned again.
                 """,
             "input_schema": {

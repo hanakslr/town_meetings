@@ -10,15 +10,15 @@ from anthropic import AsyncAnthropic, NotGiven
 from anthropic.types import Message, ToolParam, ToolUseBlock, tool_param
 from dotenv import load_dotenv
 
-from tools import Tool
-from tools.outputs import CommitteeDetailsOutputTool
+from tools import Tool, handle_tool_calls
+from tools.outputs import AllOrgsOutputTool, CommitteeDetailsOutputTool
 from tools.site_scraper import Bs4SiteScraperTool
 
 load_dotenv()
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
-GENERAL_TOOLS = {"scrape_webpage": Bs4SiteScraperTool()}
+GENERAL_TOOLS = {Bs4SiteScraperTool.name: Bs4SiteScraperTool()}
 
 
 @dataclass
@@ -72,92 +72,6 @@ class TownWebsiteAnalyzer():
             elif hasattr(self, key):
                 setattr(self, key, value)
 
-    async def handle_tool_calls(
-        self, tools: dict[str,Tool], message: Message, previous_messages=Optional[list[Message]], 
-    ):
-        """Handle any tool calls in a Claude message."""
-        if previous_messages is None:
-            previous_messages = []
-
-        content = message.content
-        tool_call_found = False
-
-        # Check if there are tool calls to handle
-        for item in content:
-            if item.type == "tool_use":
-                tool_call_found = True
-
-                tool_name = item.name
-                tool_params = item.input
-
-                self.tool_usage[item.id] = item
-                print(f"Running {tool_name} with {tool_params}")
-
-                if tool_name in tools:
-                    tool = tools[tool_name]
-
-                    # This is our last stop for structured output.
-                    if tool.is_structured_output():
-                        return tool_params
-
-                    result = await tool.execute(tool_params)
-
-                    new_messages = previous_messages.copy()
-
-
-                    new_messages.append({"role": "assistant", "content": content})
-                    new_messages.append(
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "tool_result",
-                                    "tool_use_id": item.id,
-                                    "content": json.dumps(result),
-                                }
-                            ],
-                        }
-                    )
-
-                    print("Assistant:", content)
-                    print("Response:", new_messages[-1] )
-
-
-                    # new_messages_with_last_cached = new_messages.copy()
-                    # new_messages_with_last_cached[-1]["content"][0]["cache_control"] = {"type": "ephemeral"}
-
-                    new_message = await self.client.messages.create(
-                        model="claude-3-7-sonnet-20250219",
-                        max_tokens=4000,
-                        temperature=0,
-                        system="You are an expert in analyzing municipal government websites. You locate information to help keep citizens informed and engaged.",
-                        messages=new_messages,
-                        tools=[tool.get_tool_definition() for tool in tools.values()],
-                        tool_choice={"type": "auto"},
-                    )
-
-                    print(f"Calling again with {new_message}")
-
-                    # Recursively handle any further tool calls
-                    return await self.handle_tool_calls(tools, new_message, new_messages)
-
-        # If no tool calls or we've completed the process, return the final results
-        if not tool_call_found:
-            final_content = " ".join(
-                [item.text for item in content if item.type == "text"]
-            )
-
-            # Try to extract structured data from Claude's response
-            try:
-                # Look for JSON structure in the response
-                json_match = re.search(r"\{.*\}", final_content, re.DOTALL)
-                if json_match:
-                    structured_data = json.loads(json_match.group(0))
-                    return structured_data
-                else:
-                    return {"summary": final_content}
-            except Exception as e:
-                return {"summary": final_content, "error": str(e)}
 
     async def find_town_website(self):
         """Use Claude to find the official website for a town."""
@@ -194,28 +108,27 @@ class TownWebsiteAnalyzer():
                 The official town website for {self.town_name}, {self.state} is {self.website_url}
                 Analyze the town website to find:
                 
-                1. All boards, committees, and commissions
-                2. The URL of a webpage with information about that group.
+                1. The URL for agendas and/or minutes for all orgs. This is not specific to one org. It may not exist.
+                2. All boards, committees, and commissions
+                3. The URL of a webpage with specific information about that group.
                 
-                Use the scrape_webpage tool to help with this analysis. Start by examining the main page,
-                then look for navigation elements that might lead to committees or government sections.
+                Use the {Bs4SiteScraperTool.name} tool to help with this analysis. Start by examining the main page,
+                then look for navigation elements or links that might lead to committees or government sections.
 
-                Each organization may store their information completely differently. 
+                Municipal website may have all of the agendas on a single page, or they may have a single page that links out to each group, or there
+                may be a separate agendas page for each group.
+
+                Each organization may have a different page structure. 
                 
-                Return your findings as a structured JSON with this format:
-                {{
-                  "committees": [
-                    {{
-                      "name": "Committee Name",
-                      "url": "URL to committee page"
-                    }}
-                  ]
-                }}
+                Return your findings using the {AllOrgsOutputTool.name}
                 """,
                 }
             ]
 
-            tools = [tool.get_tool_definition() for tool in GENERAL_TOOLS.values()]
+            tools = {
+                **GENERAL_TOOLS,
+                AllOrgsOutputTool.name: AllOrgsOutputTool()
+            }
 
             # Create message with tool that can use BeautifulSoup
             response = await self.client.messages.create(
@@ -224,17 +137,15 @@ class TownWebsiteAnalyzer():
                 temperature=0,
                 system="You are an expert in analyzing municipal government websites. Use the provided tools to extract information about town committees. You have access to tools, but only use them when necessary. If a tool is not required, respond as normal.",
                 messages=initial_messages,
-                tools=tools,
+                tools=[tool.get_tool_definition() for tool in tools.values()],
                 tool_choice={"type": "auto"},
             )
 
             # Process the message and handle tool calls
-            result = await self.handle_tool_calls(tools, response, initial_messages)
+            result = await handle_tool_calls(self.client, tools, response, initial_messages)
 
-            committees = result.get("committees", None)
-
-            if committees:
-                self.committees = committees
+            if result:
+                self.committees = result
             else:
                 raise Exception("Could not find committees")
 
@@ -263,14 +174,14 @@ class TownWebsiteAnalyzer():
 
             Each group handles this differently.
             
-            Return your findings using the committee_meeting_times_summary tool.
+            Return your findings using the {CommitteeDetailsOutputTool.name} tool.
             """,
             }
         ]
 
         tools: dict[str, Tool] = {
             **GENERAL_TOOLS,
-            "committee_meeting_times_summary": CommitteeDetailsOutputTool()
+            CommitteeDetailsOutputTool.name: CommitteeDetailsOutputTool()
         }
 
         # Create message with tool that can use BeautifulSoup
@@ -285,7 +196,7 @@ class TownWebsiteAnalyzer():
         )
 
         # Process the message and handle tool calls
-        result = await self.handle_tool_calls(tools, response, initial_messages)
+        result = await handle_tool_calls(self.client, tools, response, initial_messages)
 
         comittee.details = result
 
@@ -297,6 +208,8 @@ class TownWebsiteAnalyzer():
 
         if not self.committees:
             await self.find_town_orgs()
+
+        raise Exception("stop")
 
         for committee in self.committees:
             if not committee.details:
