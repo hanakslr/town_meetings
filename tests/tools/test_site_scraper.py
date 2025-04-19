@@ -15,7 +15,7 @@ async def test_execute_with_extractions():
     result = await scraper.execute({
         "url": "http://willistonvt.govoffice3.com/index.asp?Type=B_DIR&SEC=%7B3076BCA1-3425-474F-8F7E-1103631082A0%7D",
         "extract_links": ["agenda", "minutes", "meeting"],
-        "extract_text": True,
+        "extract_body_text": True,
         "extract_navigation": True
     })
 

@@ -39,9 +39,9 @@ class Bs4SiteScraperTool(Tool):
                         },
                         "description": "Array of strings to extract links for  - only links containing these strings as their display text will be included.",
                     },
-                    "extract_text": {
+                    "extract_body_text": {
                         "type": "boolean",
-                        "description": "Whether to extract all text from the page. This is useful for gaining specific information once it has been located, but is expensive if you don't really need it because it returns so much content.",
+                        "description": "Whether to extract body-like text from the page. This ignores link-like text or nav-like text.",
                     },
                     "extract_navigation": {
                         "type": "boolean",
@@ -57,7 +57,7 @@ class Bs4SiteScraperTool(Tool):
         """Execute the tool with the given parameters."""
         url = params.get("url")
         extract_links = params.get("extract_links", [])
-        extract_text = params.get("extract_text", False)
+        extract_body_text = params.get("extract_body_text", False)
         extract_navigation = params.get("extract_navigation", False)
 
 
@@ -123,7 +123,7 @@ class Bs4SiteScraperTool(Tool):
                 result["links"] = links
 
             # Extract main text if requested
-            if extract_text:
+            if extract_body_text:
                 tags= ["main", "article", "section", "div", "p"]
                 main_elements = soup.find_all(tags)
                 main_text = []
