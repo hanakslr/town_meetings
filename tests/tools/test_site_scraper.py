@@ -1,26 +1,33 @@
+import json
+import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from bs4 import BeautifulSoup
 
+# This isn't scalable but works for now.
+from dotenv import load_dotenv
+
 from tools.site_scraper import Bs4SiteScraperTool
 
+load_dotenv()
 
 @pytest.mark.asyncio
-async def test_execute_with_extractions():
+async def test_text_body_extraction():
+    """This is more of a test for isolating the site scraper instead of a strict unit test."""
+
     # Create the tool instance
     scraper = Bs4SiteScraperTool()
 
     # Test with real website and parameters
     result = await scraper.execute({
-        "url": "http://willistonvt.govoffice3.com/index.asp?Type=B_DIR&SEC=%7B3076BCA1-3425-474F-8F7E-1103631082A0%7D",
+        "url": os.environ["TEST_WEBSITE_URL_1"],
         "extract_links": ["agenda", "minutes", "meeting"],
-        "extract_body_text": True,
-        "extract_navigation": True
+        "extract_body_text": True
     })
 
-    
-    assert result["url"] == "http://willistonvt.govoffice3.com/index.asp?Type=B_DIR&SEC=%7B3076BCA1-3425-474F-8F7E-1103631082A0%7D"
+    print(json.dumps(result, indent=2))
+
     assert result["title"] is not None
     
     # Check links
@@ -33,7 +40,3 @@ async def test_execute_with_extractions():
     # Check main text
     assert "main_text" in result
     assert len(result["main_text"]) > 0
-    
-    # Check navigation
-    assert "navigation" in result
-    assert len(result["navigation"]) > 0

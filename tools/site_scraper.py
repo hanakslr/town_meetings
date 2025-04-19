@@ -43,10 +43,10 @@ class Bs4SiteScraperTool(Tool):
                         "type": "boolean",
                         "description": "Whether to extract body-like text from the page. This ignores link-like text or nav-like text.",
                     },
-                    "extract_navigation": {
-                        "type": "boolean",
-                        "description": "Whether to extract navigation elements",
-                    },
+                    # "extract_navigation": {
+                    #     "type": "boolean",
+                    #     "description": "Whether to extract navigation elements",
+                    # },
                 },
                 "required": ["url"],
             },
@@ -58,7 +58,7 @@ class Bs4SiteScraperTool(Tool):
         url = params.get("url")
         extract_links = params.get("extract_links", [])
         extract_body_text = params.get("extract_body_text", False)
-        extract_navigation = params.get("extract_navigation", False)
+        # extract_navigation = params.get("extract_navigation", False)
 
 
         # Create SSL context with default settings
@@ -128,13 +128,10 @@ class Bs4SiteScraperTool(Tool):
                 main_elements = soup.find_all(tags)
                 main_text = []
 
-                print("len", len(main_elements))
-
+                # Skip any elements masquerading as nav-like things
                 main_elements = [element for element in main_elements if not any(c in str(element.get("class", []))
                         for c in ["nav", "menu", "footer", "header", "navbar", "footernav"])]
 
-
-                print("new len", len(main_elements))
 
                 for element in main_elements:
                     text = element.get_text(separator="\n", strip=True)
@@ -162,18 +159,18 @@ class Bs4SiteScraperTool(Tool):
               
                 result["main_text"] = main_text
 
-            # Handle navigation elements specifically
-            if extract_navigation:
-                nav_elements = soup.select("nav, .nav, .menu, header, .navigation")
-                if nav_elements:
-                    result["navigation"] = []
-                    for nav in nav_elements[:3]:
-                        nav_links = []
-                        for a in nav.find_all("a", href=True):
-                            nav_links.append(
-                                {"url": a["href"], "text": a.get_text(strip=True)}
-                            )
-                        result["navigation"].append({"links": nav_links})
+            # Handle navigation elements specifically - this isn't helpful atm
+            # if extract_navigation:
+            #     nav_elements = soup.select("nav, .nav, .menu, header, .navigation, .navbar")
+            #     if nav_elements:
+            #         result["navigation"] = []
+            #         for nav in nav_elements[:3]:
+            #             nav_links = []
+            #             for a in nav.find_all("a", href=True):
+            #                 nav_links.append(
+            #                     {"url": a["href"], "text": a.get_text(strip=True)}
+            #                 )
+            #             result["navigation"].append({"links": nav_links})
 
             return result
 
