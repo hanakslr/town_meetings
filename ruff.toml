@@ -4,4 +4,6 @@ target-version = "py312"
 select = [
     # isort
     "I",
+    # flake8
+    "F",
 ]

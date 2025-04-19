@@ -64,8 +64,8 @@ class Bs4SiteScraperTool(Tool):
 
 
         # Create SSL context with default settings
-        import ssl
-        ssl_context = ssl.create_default_context()
+        # import ssl
+        # ssl_context = ssl.create_default_context()
         
         # Set custom headers
         headers = {
@@ -74,7 +74,7 @@ class Bs4SiteScraperTool(Tool):
         
         # Create session with custom timeout and SSL settings
         timeout = aiohttp.ClientTimeout(total=30)
-        connector = aiohttp.TCPConnector(ssl=ssl_context)
+        # connector = aiohttp.TCPConnector(ssl=ssl_context)
         
         async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
             try:

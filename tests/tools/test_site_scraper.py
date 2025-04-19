@@ -1,9 +1,7 @@
 import json
 import os
-from unittest.mock import AsyncMock, patch
 
 import pytest
-from bs4 import BeautifulSoup
 
 # This isn't scalable but works for now.
 from dotenv import load_dotenv

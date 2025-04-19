@@ -1,13 +1,12 @@
 import asyncio
 import json
 import os
-import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from anthropic import AsyncAnthropic, NotGiven
-from anthropic.types import Message, ToolParam, ToolUseBlock, tool_param
+from anthropic import AsyncAnthropic
+from anthropic.types import ToolUseBlock
 from dotenv import load_dotenv
 
 from tools import Tool, handle_tool_calls
@@ -24,7 +23,8 @@ GENERAL_TOOLS = {Bs4SiteScraperTool.name: Bs4SiteScraperTool()}
 @dataclass
 class Committee():
     name: str
-    url: Optional[str]
+    overview_url: Optional[str]
+    agendas_url: Optional[str]
     details: Optional[dict[str, Any]]  = None
 
 
@@ -38,6 +38,7 @@ class TownWebsiteAnalyzer():
     state: str
 
     website_url: Optional[str]
+    agendas_url: Optional[str]
     committees: Optional[list[Committee]]
 
     def __init__(self, town_name: str, state: str):
@@ -46,6 +47,7 @@ class TownWebsiteAnalyzer():
         self.town_name = town_name
         self.state = state
         self.website_url = None
+        self.agendas_url = None
         self.committees = None
 
     @property
@@ -54,6 +56,7 @@ class TownWebsiteAnalyzer():
             "town_name": self.town_name,
             "state": self.state,
             "website_url": self.website_url,
+            "agendas_url": self.agendas_url,
             "committees": self.committees
         }
 
@@ -62,13 +65,13 @@ class TownWebsiteAnalyzer():
             if key == "committees" and value is not None:
                 self.committees = []
                 for c in value:
-                    committee_data = {
-                        "name": c["name"],
-                        "url": c["url"],
-                    }
-                    if "details" in c:
-                        committee_data["details"] = c["details"]
-                    self.committees.append(Committee(**committee_data))
+                    try:
+                        committee_fields = {field: None for field in Committee.__dataclass_fields__}
+                        committee_data = {field: c.get(field) for field in committee_fields}
+                        self.committees.append(Committee(**committee_data))
+                    except Exception as e:
+                        print(f"Warning: Error processing committee data: {e}")
+                        continue
             elif hasattr(self, key):
                 setattr(self, key, value)
 
@@ -144,10 +147,8 @@ class TownWebsiteAnalyzer():
             # Process the message and handle tool calls
             result = await handle_tool_calls(self.client, tools, response, initial_messages)
 
-            if result:
-                self.committees = result
-            else:
-                raise Exception("Could not find committees")
+            self.committees = result.get("committees", None)
+            self.agendas_url = result.get("agendas_url", None)
 
         except Exception as e:
             return {"error": str(e)}
@@ -217,11 +218,26 @@ class TownWebsiteAnalyzer():
                 await asyncio.sleep(30)
 
 if __name__ == "__main__":
+    import argparse
     import os
 
-    town_name = "Williston"
-    state = "VT"
-    resume_latest = True
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='Analyze a town website for meeting information.')
+    parser.add_argument('town_name', help='Name of the town to analyze')
+    parser.add_argument('state', help='Two-letter state code (e.g., VT, MA, NY)')
+    parser.add_argument('--no-resume', action='store_true', help='Do not resume from latest saved state')
+    
+    # Parse arguments
+    args = parser.parse_args()
+    
+    # Validate state code
+    if len(args.state) != 2 or not args.state.isalpha():
+        parser.error("State must be a valid 2-letter code (e.g., VT, MA, NY)")
+    
+    # Convert state to uppercase
+    state = args.state.upper()
+    town_name = args.town_name
+    resume_latest = not args.no_resume
 
     # Make a {state}_{town_name} dir if it doesn't already exist
     directory_path = f"output/{state}/{town_name}"
@@ -242,6 +258,8 @@ if __name__ == "__main__":
                 with open(latest, 'r') as f:
                     previous_result = json.load(f)
                 analyzer.resume_from(previous_result)
+
+        raise Exception("done")
 
         asyncio.run(analyzer.run_workflow())
     finally:

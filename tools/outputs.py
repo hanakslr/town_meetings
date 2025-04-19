@@ -1,4 +1,4 @@
-from typing import Any, Dict, override
+from typing import Any, Dict
 
 from anthropic.types import ToolParam
 
