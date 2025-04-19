@@ -301,7 +301,7 @@ class TownWebsiteAnalyzer():
         for committee in self.committees:
             if not committee.details:
                 await self.find_org_details(committee)
-                asyncio.sleep(60)
+                await asyncio.sleep(30)
 
 if __name__ == "__main__":
     import os
