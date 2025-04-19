@@ -25,7 +25,7 @@ class Bs4SiteScraperTool(Tool):
         """Return the tool definition that can be passed to Claude."""
         return {
             "name": "scrape_webpage",
-            "description": """Scrape a webpage using BeautifulSoup to extract specific elements. 
+            "description": """Scrape a webpage using BeautifulSoup to extract specific elements. Identical information that is in a previous call use may be filtered out and not returned again.
                 """,
             "input_schema": {
                 "type": "object",
@@ -124,24 +124,43 @@ class Bs4SiteScraperTool(Tool):
 
             # Extract main text if requested
             if extract_text:
-                main_elements = soup.find_all(["main", "article", "section", "div"])
+                tags= ["main", "article", "section", "div", "p"]
+                main_elements = soup.find_all(tags)
                 main_text = []
 
+                print("len", len(main_elements))
+
+                main_elements = [element for element in main_elements if not any(c in str(element.get("class", []))
+                        for c in ["nav", "menu", "footer", "header", "navbar", "footernav"])]
+
+
+                print("new len", len(main_elements))
+
                 for element in main_elements:
-                    if any(
-                        c in str(element.get("class", []))
-                        for c in ["nav", "menu", "footer", "header"]
-                    ):
+                    text = element.get_text(separator="\n", strip=True)
+
+                    # this isn't the most nested element of the tags we are looking for
+                    if element.name != "p" and any(child.name in tags for child in element.find_all(tags)):
                         continue
 
-                    text = element.get_text(separator="\n", strip=True)
-                    if len(text) > 100 and not text in self.previous_text_blobs:
+                    children = element.find_all()
+
+                    # this element only contains links and/or scripts
+                    if len(children) and all([child.name in ["a", "script"] for child in children]):
+                        continue
+
+                    # Skip divs that are inside an <a>
+                    if element.name == "div" and element.find_parent("a") is not None:
+                        continue
+
+                    
+                    if len(text) > 70 and not text in self.previous_text_blobs:
                         main_text.append(text)
                         self.previous_text_blobs.append(text)
                     elif text in self.previous_text_blobs:
                         print(f"Skipping including {len(text)} prev included chars")
-
-                result["main_text"] = main_text[:5]
+              
+                result["main_text"] = main_text
 
             # Handle navigation elements specifically
             if extract_navigation:
