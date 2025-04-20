@@ -1,9 +1,10 @@
 import asyncio
+import copy
 from typing import Any, Dict
 
 import aiohttp
 from anthropic.types import ToolParam
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString, Tag
 
 from tools import Tool
 
@@ -44,10 +45,6 @@ class Bs4SiteScraperTool(Tool):
                         "type": "boolean",
                         "description": "Whether to extract body-like text from the page. This ignores link-like text or nav-like text.",
                     },
-                    # "extract_navigation": {
-                    #     "type": "boolean",
-                    #     "description": "Whether to extract navigation elements",
-                    # },
                 },
                 "required": ["url"],
             },
@@ -167,14 +164,7 @@ class Bs4SiteScraperTool(Tool):
                     ):
                         continue
 
-                    children = element.find_all()
-
-                    # Skip elements that are entirely composed of links and scripts
-                    if len(children) and all(
-                        [child.name in ["a", "script"] for child in children]
-                    ): 
-                        print(text.strip() for text in element.stripped_strings if text not in element.find_all(["a", "script"], recursive=False))
-                        print(f"Skipping element that only contains links and scripts: {text}")
+                    if not is_body_like(element):
                         continue
 
                     # Skip divs that are inside an <a>
@@ -189,17 +179,38 @@ class Bs4SiteScraperTool(Tool):
 
                 result["main_text"] = main_text
 
-            # Handle navigation elements specifically - this isn't helpful atm
-            # if extract_navigation:
-            #     nav_elements = soup.select("nav, .nav, .menu, header, .navigation, .navbar")
-            #     if nav_elements:
-            #         result["navigation"] = []
-            #         for nav in nav_elements[:3]:
-            #             nav_links = []
-            #             for a in nav.find_all("a", href=True):
-            #                 nav_links.append(
-            #                     {"url": a["href"], "text": a.get_text(strip=True)}
-            #                 )
-            #             result["navigation"].append({"links": nav_links})
-
             return result
+
+def is_body_like(element):
+    """
+    Returns True if the element contains meaningful non-link text.
+    """
+
+    # Shallow copy of the tag to avoid modifying the original soup
+    element_copy = copy.copy(element)
+
+    # Remove all nested <a> tags
+    for a in element_copy.find_all('a'):
+        a.decompose()
+
+    # Get remaining visible text
+    remaining_text = element_copy.get_text(strip=True)
+
+    if len(remaining_text) < 10:
+        return False
+
+    for child in element.children:
+        if isinstance(child, NavigableString):
+            # Strip whitespace and check if there's actual text content
+            if child.strip() and len(child.strip()) > 10:
+                return True
+        elif isinstance(child, Tag):
+            if child.name not in ['a', 'script']:
+                # It contains other tags, like <span>, <strong>, or nested <div>s
+                return True
+            elif len(child.get_text(strip=True)) > 10:
+                continue
+
+    return False
+
+
