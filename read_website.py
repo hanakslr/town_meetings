@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from prompt_toolkit import PromptSession
 from prompt_toolkit.validation import ValidationError, Validator
 
-from tools import Tool, handle_tool_calls
+from task_handler import TaskHandler
 from tools.human_feedback import GetHumanFeedbackTool
 from tools.outputs import AllOrgsOutputTool, OrgMeetingDetailsOutputTool
 from tools.site_scraper import Bs4SiteScraperTool
@@ -142,47 +142,38 @@ class TownWebsiteAnalyzer:
     async def find_town_orgs(self):
         try:
             # Initial message to Claude with tools
-            initial_messages = [
-                {
-                    "role": "user",
-                    "content": f"""
-                The official town website for {self.town_name}, {self.state} is {self.website_url}
-                Analyze the town website to find:
-                
-                1. The URL for agendas and/or minutes for all orgs. This is not specific to one org. It may not exist.
-                2. All boards, committees, and commissions
-                3. The URL of a webpage with specific information about that group.
-                
-                Use the {Bs4SiteScraperTool.name} tool to help with this analysis. Start by examining the main page,
-                then look for navigation elements or links that might lead to committees or government sections.
+            task_prompt = f"""
+            The official town website for {self.town_name}, {self.state} is {self.website_url}
+            Analyze the town website to find:
+            
+            1. The URL for agendas and/or minutes for all orgs. This is not specific to one org. It may not exist.
+            2. All boards, committees, and commissions
+            3. The URL of a webpage with specific information about that group.
+            
+            Use the {Bs4SiteScraperTool.name} tool to help with this analysis. Start by examining the main page,
+            then look for navigation elements or links that might lead to committees or government sections.
 
-                Municipal website may have all of the agendas on a single page, or they may have a single page that links out to each group, or there
-                may be a separate agendas page for each group.
+            Municipal website may have all of the agendas on a single page, or they may have a single page that links out to each group, or there
+            may be a separate agendas page for each group.
 
-                Each organization may have a different page structure. 
-                
-                Return your findings using the {AllOrgsOutputTool.name}
-                """,
-                }
-            ]
+            Each organization may have a different page structure. 
+            
+            Return your findings using the {AllOrgsOutputTool.name}
+            """
 
-            tools = {**GENERAL_TOOLS, AllOrgsOutputTool.name: AllOrgsOutputTool()}
+            system_prompt = """
+            You are an expert in analyzing municipal government websites. 
+            You have access to tools, but only use them when necessary. 
+            If a tool is not required, respond as normal.
+            """
 
-            # Create message with tool that can use BeautifulSoup
-            response = await self.client.messages.create(
-                model="claude-3-7-sonnet-20250219",
-                max_tokens=4000,
-                temperature=0,
-                system="You are an expert in analyzing municipal government websites. Use the provided tools to extract information about town committees. You have access to tools, but only use them when necessary. If a tool is not required, respond as normal.",
-                messages=initial_messages,
-                tools=[tool.get_tool_definition() for tool in tools.values()],
-                tool_choice={"type": "auto"},
+            handler = TaskHandler(
+                name="find_town_orgs",
+                client=self.client,
+                system_prompt=system_prompt,
+                tools=[Bs4SiteScraperTool, AllOrgsOutputTool],
             )
-
-            # Process the message and handle tool calls
-            result = await handle_tool_calls(
-                self.client, tools, response, initial_messages
-            )
+            result = await handler.run(task_prompt=task_prompt, max_tokens=4000)
 
             self.committees = result.get("committees", None)
             self.agendas_url = result.get("agendas_url", None)
@@ -191,41 +182,28 @@ class TownWebsiteAnalyzer:
             return {"error": str(e)}
 
     async def find_org_meeting_details(self, committee: Committee):
-        initial_messages = [
-            {
-                "role": "user",
-                "content": f"""
-                    There is a municipal group, the {committee.name} for {self.town_name}, {self.state}. This is a municipal board, committee, or commission.
+        task_prompt = f"""
+        There is a municipal group, the {committee.name} for {self.town_name}, {self.state}. This is a municipal board, committee, or commission.
 
-                    There is an overview page that gives details for the organization at {committee.overview_url}.
-        
-                    Find the meeting schedule and location for this group.
+        There is an overview page that gives details for the organization at {committee.overview_url}.
 
-                    Some groups meet regularly and others only meet as needed. If the schedule and location information is not readily available, just leave what cannot 
-                    be found empty. If they do meet regularly the information will be easily found. No need to check specific documents.
+        Find the meeting schedule and location for this group.
 
-                    Return your findings using the {OrgMeetingDetailsOutputTool.name}
-                """,
-            }
-        ]
+        Some groups meet regularly and others only meet as needed. If the schedule and location information is not readily available, just leave what cannot 
+        be found empty. If they do meet regularly the information will be easily found. No need to check specific documents.
 
-        tools = {**GENERAL_TOOLS, OrgMeetingDetailsOutputTool.name: OrgMeetingDetailsOutputTool()}
+        Return your findings using the {OrgMeetingDetailsOutputTool.name}
+        """
 
-        # Create message with tool that can use BeautifulSoup
-        response = await self.client.messages.create(
-            model="claude-3-7-sonnet-20250219",
-            max_tokens=1000,
-            temperature=0,
-            system="You are an expert in analyzing municipal government websites. Use the provided tools to extract information about town committees. You have access to tools, but only use them when necessary. If a tool is not required, respond as normal.",
-            messages=initial_messages,
-            tools=[tool.get_tool_definition() for tool in tools.values()],
-            tool_choice={"type": "auto"},
+        system_prompt = "You are an expert in analyzing municipal government websites. Use the provided tools to extract information about town committees. You have access to tools, but only use them when necessary. If a tool is not required, respond as normal."
+
+        handler = TaskHandler(
+            name="find_org_meeting_details",
+            client=self.client,
+            system_prompt=system_prompt,
+            tools=[Bs4SiteScraperTool, OrgMeetingDetailsOutputTool],
         )
-
-        # Process the message and handle tool calls
-        result = await handle_tool_calls(
-            self.client, tools, response, initial_messages
-        )
+        result = await handler.run(task_prompt=task_prompt, max_tokens=1000)
 
         committee.meeting_details = result
 
@@ -235,62 +213,45 @@ class TownWebsiteAnalyzer:
         print(f"Finding details for {comittee=}")
 
         prompt = f"""
+        There is a municipal group, the {comittee.name} for {self.town_name}, {self.state}. This is a municipal board, committee, or commission.
 
-            There is a municipal group, the {comittee.name} for {self.town_name}, {self.state}. This is a municipal board, committee, or commission.
+        {f"They meet: {comittee.meeting_details.get('schedule', None)}" if comittee.meeting_details.get("schedule", None) else ""}
+        There is an overview page that gives details for the organization at {comittee.overview_url}.
+        {f"There is an page that gives access to their meeting agendas at: {comittee.agendas_url}" if comittee.agendas_url else ""}
+        {f"The meeting agendas for all municipal groups can be found at: {self.agendas_url}" if self.agendas_url else ""}.
 
-            {f"They meet: {comittee.meeting_details.get("schedule", None)}" if comittee.meeting_details.get("schedule", None) else ""}
-            There is an overview page that gives details for the organization at {comittee.overview_url}.
-            {f"There is an page that gives access to their meeting agendas at: {comittee.agendas_url}" if comittee.agendas_url else ""}
-            {f"The meeting agendas for all municipal groups can be found at: {self.agendas_url}" if self.agendas_url else ""}.
+        Generate a machine-consumable strategy for locating all of the groups agendas.
+        Public municipal bodies are required by law to publish their agendas. These will
+        only ever be referred to as "agendas" or "minutes" and will be available somewhere on the page, either directly or via a link.
 
-            Generate a machine-consumable strategy for locating all of the groups agendas.
-            Public municipal bodies are required by law to publish their agendas. These will
-            only ever be referred to as "agendas" or "minutes" and will be available somewhere on the page, either directly or via a link.
+        Each group handles this differently and you should produce a reliable fetching strategy represented in a JSON schema.
 
-            Each group handles this differently and you should produce a reliable fetching strategy represented in a JSON schema.
+        You are allowed to define a custom schema for each committee or board, based on how their data is structured — but your schema must be programmatically useful.
 
-            You are allowed to define a custom schema for each committee or board, based on how their data is structured — but your schema must be programmatically useful.
+        Keep the schemas verbosity minimal, and the complexity as high as needed to get complete information — only include fields that are required to fetch the data. Do not return markdown, explanation text, or full paragraphs. 
+        This output will be passed directly to a downstream code system. Downstream, BeautifulSoup (among other tools) could be used for retrieval.
 
-            Keep the schemas verbosity minimal, and the complexity as high as needed to get complete information — only include fields that are required to fetch the data. Do not return markdown, explanation text, or full paragraphs. 
-            This output will be passed directly to a downstream code system. Downstream, BeautifulSoup (among other tools) could be used for retrieval.
+        The fetching_strategy should be a JSON object like this:
 
-            The fetching_strategy should be a JSON object like this:
+        {{
+            "strategy_type": "shared" | "individual" | "not_found", # or something else that makes sense
+            "strategy_name": "yearly_archive" | "embedded-html-links" | "filter-table" # these are examples. Make up something that makes sense.
+            "schema": {{
+                "field_1": "description of how this field is used",
+                "field_2": "..."
+            }},
+            "values": {{
+                "field_1": "actual value for this committee",
+                "field_2": "..."
+            }},
+            "notes": "Optional clarifications or edge cases",
+            "code_snippet": "Python code snippet to get the agendas based on the schema presented, as minimal as possible - it does not need to be a working example. It should be specific to the strategy_name and not contain any hard coded references to this specific committee."
+        }}
 
-            {{
-                "strategy_type": "shared" | "individual" | "not_found", # or something else that makes sense
-                "strategy_name": "yearly_archive" | "embedded-html-links" | "filter-table" # these are examples. Make up something that makes sense.
-                "schema": {{
-                    "field_1": "description of how this field is used",
-                    "field_2": "..."
-                }},
-                "values": {{
-                    "field_1": "actual value for this committee",
-                    "field_2": "..."
-                }},
-                "notes": "Optional clarifications or edge cases",
-                "code_snippet": "Python code snippet to get the agendas based on the schema presented, as minimal as possible - it does not need to be a working example. It should be specific to the strategy_name and not contain any hard coded references to this specific committee."
-            }}
+        Propose your strategy for feedback using the {GetHumanFeedbackTool.name} tool, and make as many iterations as needed.
 
-            Propose your strategy for feedback using the {GetHumanFeedbackTool.name} tool, and make as many iterations as needed.
-
-            After recieving the go ahead from human feedback that it looks good, return your fetching strategy as structured JSON as specifief above.
+        After recieving the go ahead from human feedback that it looks good, return your fetching strategy as structured JSON as specifief above.
         """
-
-        # Initial message to Claude with tools
-        initial_messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "cache_control": {"type": "ephemeral"},
-                        "text": prompt,
-                    }
-                ],
-            }
-        ]
-
-        # Return your findings using the {CommitteeDetailsOutputTool.name} tool.
 
         system_prompt = """
           You are a web scraping strategist who analyzes municipal websites and proposes machine-consumable strategies for 
@@ -302,33 +263,19 @@ class TownWebsiteAnalyzer:
           If a tool is not required, respond as normal.
         """
 
-        tools: dict[str, Tool] = {
-            **GENERAL_TOOLS,
-            GetHumanFeedbackTool.name: GetHumanFeedbackTool(),
-            # CommitteeDetailsOutputTool.name: CommitteeDetailsOutputTool()
-        }
-
-        # Create message with tool that can use BeautifulSoup
-        response = await self.client.messages.create(
-            model="claude-3-7-sonnet-20250219",
-            max_tokens=4000,
-            temperature=0,
-            system=[
-                {
-                    "type": "text",
-                    "text": system_prompt,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-            messages=initial_messages,
-            tools=[tool.get_tool_definition() for tool in tools.values()],
-            tool_choice={"type": "auto"},
+        handler = TaskHandler(
+            name="find_org_agenda_fetching_strategy",
+            client=self.client,
+            system_prompt=system_prompt,
+            tools=[Bs4SiteScraperTool, GetHumanFeedbackTool],
+        )
+        result = await handler.run(
+            task_prompt=prompt,
+            max_tokens=8000,
+            thinking={"type": "enabled", "budget_tokens": 2000},
         )
 
-        # Process the message and handle tool calls
-        result = await handle_tool_calls(self.client, tools, response, initial_messages)
-
-        comittee.details = result
+        comittee.fetching_strategy = result
 
     async def run_workflow(self) -> Dict[str, Any]:
         """Run the full town website analysis workflow."""
@@ -340,7 +287,9 @@ class TownWebsiteAnalyzer:
 
         session = PromptSession()
         for committee in self.committees:
-            if (not committee.meeting_details or not committee.fetching_strategy) and not committee.skip_reason:
+            if (
+                not committee.meeting_details or not committee.fetching_strategy
+            ) and not committee.skip_reason:
                 # Display committee info and skip reasons
                 print(f"\nCommittee: {committee.name}")
                 print("URL:", committee.overview_url)
@@ -376,7 +325,7 @@ class TownWebsiteAnalyzer:
                     else:
                         committee.skip_reason = SKIP_REASONS[index]
                     continue
-                
+
                 if not committee.meeting_details:
                     await self.find_org_meeting_details(committee)
                 if not committee.fetching_strategy:

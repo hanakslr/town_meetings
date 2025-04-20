@@ -46,9 +46,7 @@ class GetHumanFeedbackTool(Tool):
         # Print the data nicely formatted
         print("\nData for review:")
 
-        print(
-            json.dumps(data, indent=2)
-        )
+        print(json.dumps(data, indent=2))
 
         print("\n" + prompt)
 

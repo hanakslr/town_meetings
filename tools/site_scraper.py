@@ -171,7 +171,7 @@ class Bs4SiteScraperTool(Tool):
                     if element.name == "div" and element.find_parent("a") is not None:
                         continue
 
-                    if len(text) > 70 and not text in self.previous_text_blobs:
+                    if len(text) > 70 and text not in self.previous_text_blobs:
                         main_text.append(text)
                         self.previous_text_blobs.append(text)
                     elif text in self.previous_text_blobs:
@@ -180,6 +180,7 @@ class Bs4SiteScraperTool(Tool):
                 result["main_text"] = main_text
 
             return result
+
 
 def is_body_like(element):
     """
@@ -190,7 +191,7 @@ def is_body_like(element):
     element_copy = copy.copy(element)
 
     # Remove all nested <a> tags
-    for a in element_copy.find_all('a'):
+    for a in element_copy.find_all("a"):
         a.decompose()
 
     # Get remaining visible text
@@ -205,12 +206,10 @@ def is_body_like(element):
             if child.strip() and len(child.strip()) > 10:
                 return True
         elif isinstance(child, Tag):
-            if child.name not in ['a', 'script']:
+            if child.name not in ["a", "script"]:
                 # It contains other tags, like <span>, <strong>, or nested <div>s
                 return True
             elif len(child.get_text(strip=True)) > 10:
                 continue
 
     return False
-
-
