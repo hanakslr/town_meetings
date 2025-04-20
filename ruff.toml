@@ -7,3 +7,10 @@ select = [
     # flake8
     "F",
 ]
+
+[format]
+# Use double quotes for strings
+quote-style = "double"
+# Use spaces around operators
+line-ending = "auto"
+indent-style = "space"

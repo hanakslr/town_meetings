@@ -10,13 +10,12 @@ from tools import Tool
 
 class Bs4SiteScraperTool(Tool):
     """A tool class for analyzing webpages using BeautifulSoup."""
-    name = "scrape_webpage"
 
+    name = "scrape_webpage"
 
     previous_text_blobs: list[str]
     previous_urls: list[dict[str, str]]
     """Store previous text_blobs"""
-
 
     def __init__(self):
         self.previous_text_blobs = []
@@ -37,7 +36,7 @@ class Bs4SiteScraperTool(Tool):
                         "type": "array",
                         "items": {
                             "type": "string",
-                            "description": "Filtering term for the link or its display text"
+                            "description": "Filtering term for the link or its display text",
                         },
                         "description": "Array of strings to extract links for  - only links containing these strings as their display text will be included.",
                     },
@@ -53,7 +52,6 @@ class Bs4SiteScraperTool(Tool):
                 "required": ["url"],
             },
         }
-        
 
     async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the tool with the given parameters."""
@@ -62,25 +60,26 @@ class Bs4SiteScraperTool(Tool):
         extract_body_text = params.get("extract_body_text", False)
         # extract_navigation = params.get("extract_navigation", False)
 
-
         # Create SSL context with default settings
         # import ssl
         # ssl_context = ssl.create_default_context()
-        
+
         # Set custom headers
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
-        
+
         # Create session with custom timeout and SSL settings
         timeout = aiohttp.ClientTimeout(total=30)
         # connector = aiohttp.TCPConnector(ssl=ssl_context)
-        
+
         async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
             try:
                 async with session.get(url, ssl=False) as response:
                     if response.status != 200:
-                        return {"error": f"Failed to access URL: HTTP {response.status}"}
+                        return {
+                            "error": f"Failed to access URL: HTTP {response.status}"
+                        }
                     response_text = await response.text()
             except aiohttp.ClientConnectorError as e:
                 print(f"Connection error: {str(e)}")
@@ -107,16 +106,28 @@ class Bs4SiteScraperTool(Tool):
                 for a in soup.find_all("a", href=True):
                     href = a["href"]
                     text = a.get_text(strip=True)
-            
+
                     # Skip links without href or text
                     if not href or not text:
                         continue
 
-                    if not any([keyword for keyword in extract_links if keyword.lower() in text.lower()]):
+                    if not any(
+                        [
+                            keyword
+                            for keyword in extract_links
+                            if keyword.lower() in text.lower()
+                        ]
+                    ):
                         continue
 
                     # TODO this could be more efficient
-                    if any([prev for prev in self.previous_urls if prev.get("url") == href and prev.get("text") == text]):
+                    if any(
+                        [
+                            prev
+                            for prev in self.previous_urls
+                            if prev.get("url") == href and prev.get("text") == text
+                        ]
+                    ):
                         print("Skipping previously found URL")
                     else:
                         self.previous_urls.append({"url": href, "text": text})
@@ -126,39 +137,56 @@ class Bs4SiteScraperTool(Tool):
 
             # Extract main text if requested
             if extract_body_text:
-                tags= ["main", "article", "section", "div", "p"]
+                tags = ["main", "article", "section", "div", "p"]
                 main_elements = soup.find_all(tags)
                 main_text = []
 
                 # Skip any elements masquerading as nav-like things
-                main_elements = [element for element in main_elements if not any(c in str(element.get("class", []))
-                        for c in ["nav", "menu", "footer", "header", "navbar", "footernav"])]
-
+                main_elements = [
+                    element
+                    for element in main_elements
+                    if not any(
+                        c in str(element.get("class", []))
+                        for c in [
+                            "nav",
+                            "menu",
+                            "footer",
+                            "header",
+                            "navbar",
+                            "footernav",
+                        ]
+                    )
+                ]
 
                 for element in main_elements:
                     text = element.get_text(separator="\n", strip=True)
 
                     # this isn't the most nested element of the tags we are looking for
-                    if element.name != "p" and any(child.name in tags for child in element.find_all(tags)):
+                    if element.name != "p" and any(
+                        child.name in tags for child in element.find_all(tags)
+                    ):
                         continue
 
                     children = element.find_all()
 
-                    # this element only contains links and/or scripts
-                    if len(children) and all([child.name in ["a", "script"] for child in children]):
+                    # Skip elements that are entirely composed of links and scripts
+                    if len(children) and all(
+                        [child.name in ["a", "script"] for child in children]
+                    ): 
+                        print(text.strip() for text in element.stripped_strings if text not in element.find_all(["a", "script"], recursive=False))
+                        print(f"Skipping element that only contains links and scripts: {text}")
                         continue
 
                     # Skip divs that are inside an <a>
                     if element.name == "div" and element.find_parent("a") is not None:
                         continue
 
-                    
                     if len(text) > 70 and not text in self.previous_text_blobs:
                         main_text.append(text)
                         self.previous_text_blobs.append(text)
                     elif text in self.previous_text_blobs:
                         print(f"Skipping including {len(text)} prev included chars")
-              
+
                 result["main_text"] = main_text
 
             # Handle navigation elements specifically - this isn't helpful atm
@@ -175,4 +203,3 @@ class Bs4SiteScraperTool(Tool):
             #             result["navigation"].append({"links": nav_links})
 
             return result
-

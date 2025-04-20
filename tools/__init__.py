@@ -9,23 +9,26 @@ from anthropic.types import Message, ToolParam
 
 class Tool(ABC):
     name = "abc"  # gotta implement yourself
-    
+
     @classmethod
     def is_structured_output(cls) -> bool:
         return False
-    
+
     @classmethod
     @abstractmethod
     def get_tool_definition(cls) -> ToolParam:
         raise Exception("Subclass must implement.")
 
-    
     @abstractmethod
     async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         raise Exception("Subclass must implement")
 
+
 async def handle_tool_calls(
-    client: AsyncAnthropic, tools: dict[str,Tool], message: Message, previous_messages=Optional[list[Message]], 
+    client: AsyncAnthropic,
+    tools: dict[str, Tool],
+    message: Message,
+    previous_messages=Optional[list[Message]],
 ):
     """Handle any tool calls in a Claude message."""
     if previous_messages is None:
@@ -42,10 +45,9 @@ async def handle_tool_calls(
             tool_name = item.name
             tool_params = item.input
 
-            print(f"Running {tool_name} with {tool_params}")
+            print(f"Running {tool_name}")
 
             if tool_name in tools:
-                print("found tool")
                 tool = tools[tool_name]
 
                 # This is our last stop for structured output.
@@ -55,7 +57,6 @@ async def handle_tool_calls(
                 result = await tool.execute(tool_params)
 
                 new_messages = previous_messages.copy()
-
 
                 new_messages.append({"role": "assistant", "content": content})
                 new_messages.append(
@@ -72,7 +73,7 @@ async def handle_tool_calls(
                 )
 
                 print("Assistant:", content)
-                print("Response:", new_messages[-1] )
+                print("Response:", new_messages[-1])
 
                 new_message = await client.messages.create(
                     model="claude-3-7-sonnet-20250219",
@@ -91,9 +92,7 @@ async def handle_tool_calls(
 
     # If no tool calls or we've completed the process, return the final results
     if not tool_call_found:
-        final_content = " ".join(
-            [item.text for item in content if item.type == "text"]
-        )
+        final_content = " ".join([item.text for item in content if item.type == "text"])
 
         # Try to extract structured data from Claude's response
         try:
