@@ -1,0 +1,12 @@
+{
+  "input_field_1": "some_value",
+  "expected_faker_vals": {
+    "name": "My Not Real Committee",
+    "meetings": [
+      {
+        "date": "2025-01-08",
+        "agenda": "anytown.us.gov/the_agenda.pdf"
+      }
+    ]
+  }
+}

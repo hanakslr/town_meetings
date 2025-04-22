@@ -224,7 +224,9 @@ class TownWebsiteAnalyzer:
         <committee_name>{{{comittee.name}}}</committee_name>
         <town_name>{{{self.town_name}}}</town_name>
         <state>{{{self.state}}}</state>
-        <meeting_schedule>{{{comittee.meeting_details.get('schedule',"Unknown")}}}</meeting_schedule>
+        <meeting_schedule>{{{
+            comittee.meeting_details.get("schedule", "Unknown")
+        }}}</meeting_schedule>
 
         Public municipal bodies are required by law to publish their meeting agendas. These will
         only ever be referred to as "agendas" or "minutes" and will be available somewhere on their webpage, either directly or via links.
@@ -260,8 +262,7 @@ class TownWebsiteAnalyzer:
             "notes": "Optional clarifications or edge cases",
             "code_snippet": string,
             "fetched_agendas": [
-                {
-                    "date": "YYYY-MM-DD",
+                {"date": "YYYY-MM-DD",
                     "url": "agenda_url"
                 },
                 ...

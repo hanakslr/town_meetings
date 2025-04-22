@@ -75,12 +75,7 @@ class TaskHandler:
             signal.signal(signal.SIGINT, self._original_sigint_handler)
             self._original_sigint_handler(signum, frame)
 
-    async def run(
-        self,
-        *,
-        task_prompt: str,
-        max_tokens: int
-    ):
+    async def run(self, *, task_prompt: str, max_tokens: int):
         self.max_tokens = max_tokens
 
         self.messages = [
@@ -172,8 +167,6 @@ class TaskHandler:
                         ],
                         tool_choice={"type": "auto"},
                     )
-
-                    
 
                     print(f"\nCalling again with {new_message.to_json(indent=2)}")
 

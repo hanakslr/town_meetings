@@ -1,23 +1,23 @@
-
 from abc import ABC, abstractmethod
-from typing import Any, Type
 from dataclasses import dataclass
+from typing import Any, Type
+
 
 @dataclass
 class Meeting:
     date: str
     agenda: str
 
-@dataclass 
+
+@dataclass
 class AgendaFetchResult:
     name: str
     meetings: list[Meeting]
 
 
-
 class FetchingStrategy(ABC):
     registry: dict[str, Type["FetchingStrategy"]] = {}
-    
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         key = getattr(cls, "name", cls.__name__)
@@ -28,11 +28,18 @@ class FetchingStrategy(ABC):
         pass
 
     @classmethod
-    def get_agendas(cls, for_strategy: str, input_params: dict[str, Any]) -> AgendaFetchResult:
-        return FetchingStrategy.registry[for_strategy]().fetch(input_params=input_params)
+    def get_agendas(
+        cls, for_strategy: str, input_params: dict[str, Any]
+    ) -> AgendaFetchResult:
+        return FetchingStrategy.registry[for_strategy]().fetch(
+            input_params=input_params
+        )
+
 
 class Test(FetchingStrategy):
-    name = "test"
+    name = "fake1"
 
     def fetch(self, input_params):
-        return "gotcha"
+        # This is a fake strategy - we are passing in the output in the input for the
+        # test harness
+        return input_params["expected_faker_vals"]
