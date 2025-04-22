@@ -62,6 +62,17 @@ class Committee:
     fetching_strategy: Optional[dict[str, Any]] = None
     details: Optional[dict[str, Any]] = None
 
+    @classmethod
+    def resume_from(cls, data: dict) -> "Committee":
+        """Create a Committee instance from saved data."""
+        try:
+            committee_fields = {field: None for field in cls.__dataclass_fields__}
+            committee_data = {field: data.get(field) for field in committee_fields}
+            return cls(**committee_data)
+        except Exception as e:
+            print(f"Warning: Error processing committee data: {e}")
+            raise
+
 
 class TownWebsiteAnalyzer:
     """Main class for analyzing town websites using Claude and tools."""
@@ -100,17 +111,7 @@ class TownWebsiteAnalyzer:
             if key == "committees" and value is not None:
                 self.committees = []
                 for c in value:
-                    try:
-                        committee_fields = {
-                            field: None for field in Committee.__dataclass_fields__
-                        }
-                        committee_data = {
-                            field: c.get(field) for field in committee_fields
-                        }
-                        self.committees.append(Committee(**committee_data))
-                    except Exception as e:
-                        print(f"Warning: Error processing committee data: {e}")
-                        continue
+                    self.committees.append(Committee.resume_from(c))
             elif hasattr(self, key):
                 setattr(self, key, value)
 
@@ -210,29 +211,41 @@ class TownWebsiteAnalyzer:
     async def find_org_agenda_fetching_strategy(self, comittee: Committee):
         """Given a committee, commission, or board name and its website URL
         generate a fetching strategy for its agendas."""
-        print(f"Finding details for {comittee=}")
+
+        print("Finding details for: ", json.dumps(comittee.__dict__, indent=2))
 
         prompt = f"""
-        There is a municipal group, the {comittee.name} for {self.town_name}, {self.state}. This is a municipal board, committee, or commission.
+        Your task is to create a fetching strategy for a specific municipal group's meeting agendas.
 
-        {f"They meet: {comittee.meeting_details.get('schedule', None)}" if comittee.meeting_details.get("schedule", None) else ""}
-        There is an overview page that gives details for the organization at {comittee.overview_url}.
-        {f"There is an page that gives access to their meeting agendas at: {comittee.agendas_url}" if comittee.agendas_url else ""}
-        {f"The meeting agendas for all municipal groups can be found at: {self.agendas_url}" if self.agendas_url else ""}.
+        First, review the following information about the municipal group:
+        <overview_url>{{{comittee.overview_url}}}</overview_url>
+        <committee_agendas_url>{{{comittee.agendas_url}}}</committee_agendas_url>
+        <all_orgs_agendas_url>{{{self.agendas_url}}}</all_orgs_agendas_url>
+        <committee_name>{{{comittee.name}}}</committee_name>
+        <town_name>{{{self.town_name}}}</town_name>
+        <state>{{{self.state}}}</state>
+        <meeting_schedule>{{{comittee.meeting_details.get('schedule',"Unknown")}}}</meeting_schedule>
 
-        Generate a machine-consumable strategy for locating all of the groups agendas.
-        Public municipal bodies are required by law to publish their agendas. These will
-        only ever be referred to as "agendas" or "minutes" and will be available somewhere on the page, either directly or via a link.
+        Public municipal bodies are required by law to publish their meeting agendas. These will
+        only ever be referred to as "agendas" or "minutes" and will be available somewhere on their webpage, either directly or via links.
 
-        Each group handles this differently and you should produce a reliable fetching strategy represented in a JSON schema.
-
-        You are allowed to define a custom schema for each committee or board, based on how their data is structured — but your schema must be programmatically useful.
-
-        Keep the schemas verbosity minimal, and the complexity as high as needed to get complete information — only include fields that are required to fetch the data. Do not return markdown, explanation text, or full paragraphs. 
+        Your goal is to generate a machine-consumable strategy for locating this group's meeting agendas. 
         This output will be passed directly to a downstream code system. Downstream, BeautifulSoup (among other tools) could be used for retrieval.
+        Follow these steps:
 
+        1. Analyze the provided information.
+        2. Determine the most appropriate strategy type and name.
+        3. Define a minimal yet complete schema for fetching the data.
+        4. Provide actual values for the schema fields based on the given information.
+        5. Write a concise Python code snippet that demonstrates how to use the schema to fetch the agendas.
+        6. Fetch all agendas from July 2024 until the present to make the expected result.
+        7. Create a pytest unit test for the committee's values.
+        8. Iterate on the strategy schema and values until your test passes using the 
+
+        Before presenting the final output, perform your analysis inside <strategy_analysis> tags in your thinking block.
+        
         The fetching_strategy should be a JSON object like this:
-
+        <formatting>
         {{
             "strategy_type": "shared" | "individual" | "not_found", # or something else that makes sense
             "strategy_name": "yearly_archive" | "embedded-html-links" | "filter-table" # these are examples. Make up something that makes sense.
@@ -245,12 +258,22 @@ class TownWebsiteAnalyzer:
                 "field_2": "..."
             }},
             "notes": "Optional clarifications or edge cases",
-            "code_snippet": "Python code snippet to get the agendas based on the schema presented, as minimal as possible - it does not need to be a working example. It should be specific to the strategy_name and not contain any hard coded references to this specific committee."
+            "code_snippet": string,
+            "fetched_agendas": [
+                {
+                    "date": "YYYY-MM-DD",
+                    "url": "agenda_url"
+                },
+                ...
+            ],
+            "unit_test": string
         }}
+        </formatting>
 
-        Propose your strategy for feedback using the {GetHumanFeedbackTool.name} tool, and make as many iterations as needed.
+        Ensure that your schema is as minimal as possible while still being complete. The code snippet should be specific to the strategy but not contain any hard-coded references to this particular committee. The fetched_agendas should include all agendas from July 2024 to the present. The unit_test should verify the committee's values.
+        Your final output should consist only of the JSON object and should not duplicate or rehash any of the work you did in the thinking block.
 
-        After recieving the go ahead from human feedback that it looks good, return your fetching strategy as structured JSON as specifief above.
+        Begin your analysis now:
         """
 
         system_prompt = """
@@ -268,11 +291,11 @@ class TownWebsiteAnalyzer:
             client=self.client,
             system_prompt=system_prompt,
             tools=[Bs4SiteScraperTool, GetHumanFeedbackTool],
+            thinking={"type": "enabled", "budget_tokens": 2000},
         )
         result = await handler.run(
             task_prompt=prompt,
             max_tokens=8000,
-            thinking={"type": "enabled", "budget_tokens": 2000},
         )
 
         comittee.fetching_strategy = result

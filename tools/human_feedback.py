@@ -7,6 +7,14 @@ from prompt_toolkit import PromptSession
 from tools import Tool
 
 
+class PrettyJSONEncoder(json.JSONEncoder):
+    def encode(self, obj: Any) -> str:
+        """Encode JSON with preserved line breaks."""
+        if isinstance(obj, str):
+            return obj
+        return super().encode(obj)
+
+
 class GetHumanFeedbackTool(Tool):
     """A tool class for getting human feedback on structured data."""
 
@@ -46,7 +54,7 @@ class GetHumanFeedbackTool(Tool):
         # Print the data nicely formatted
         print("\nData for review:")
 
-        print(json.dumps(data, indent=2))
+        print(json.dumps(data, indent=2, cls=PrettyJSONEncoder))
 
         print("\n" + prompt)
 
