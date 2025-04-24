@@ -42,7 +42,7 @@ def pytest_generate_tests(metafunc):
         group_names = [d.name for d in strategy_dir.iterdir() if d.is_dir()]
 
         for group in group_names:
-            expected_path = strategy_dir / group / "expected.json"
+            expected_path = strategies_dir / "expected" / f"{group}.json"
             params_path = strategy_dir / group / "params.json"
             if expected_path.exists() and params_path.exists():
                 with open(expected_path) as f:

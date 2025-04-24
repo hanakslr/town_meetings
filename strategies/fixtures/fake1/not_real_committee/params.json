@@ -1,7 +1,7 @@
 {
   "input_field_1": "some_value",
   "expected_faker_vals": {
-    "name": "My Not Real Committee",
+    "name": "Not Real Committee",
     "meetings": [
       {
         "date": "2025-01-08",

@@ -1,4 +1,5 @@
 import json
+import copy
 import re
 import signal
 from datetime import datetime
@@ -155,13 +156,17 @@ class TaskHandler:
                     print("Assistant:", content)
                     print("\nResponse:", json.dumps(result, indent=2))
 
+                    # Put the cache on the last message
+                    messages_with_cache = copy.deepcopy(self.messages)
+                    messages_with_cache[-1]["content"][0]["cache_control"] = {"type": "ephemeral"}
+
                     new_message = await self.client.messages.create(
                         model="claude-3-7-sonnet-20250219",
                         max_tokens=self.max_tokens,
                         temperature=0 if self.thinking == NOT_GIVEN else 1,
                         thinking=self.thinking,
                         system=self.system_prompt,
-                        messages=self.messages,
+                        messages=messages_with_cache,
                         tools=[
                             tool.get_tool_definition() for tool in self.tools.values()
                         ],
