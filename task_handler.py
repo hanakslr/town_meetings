@@ -158,7 +158,9 @@ class TaskHandler:
 
                     # Put the cache on the last message
                     messages_with_cache = copy.deepcopy(self.messages)
-                    messages_with_cache[-1]["content"][0]["cache_control"] = {"type": "ephemeral"}
+                    messages_with_cache[-1]["content"][0]["cache_control"] = {
+                        "type": "ephemeral"
+                    }
 
                     new_message = await self.client.messages.create(
                         model="claude-3-7-sonnet-20250219",

@@ -16,6 +16,7 @@ from tools.human_feedback import GetHumanFeedbackTool
 from tools.outputs import AllOrgsOutputTool, OrgMeetingDetailsOutputTool
 from tools.site_scraper import Bs4SiteScraperTool
 from tools.store_expected_agenda import StoreExpectedAgendas
+from tools.iterate_strategy import TestProposedStrategyTool
 
 load_dotenv()
 
@@ -237,13 +238,19 @@ class TownWebsiteAnalyzer:
         Follow these steps:
 
         1. Analyze the provided information.
-        2. Fetch all agendas from October 2024 to March 2025 and give them to the {StoreExpectedAgendas.name}.
+        2. Fetch all agendas from October 2024 to March 2025 and give them to the {
+            StoreExpectedAgendas.name
+        }.
         2. Determine the most appropriate strategy type and name.
         3. Define a minimal yet complete schema for fetching the data. It should be as generic as possible, only as specific to this case as it needs to be.
         5. Write a concise Python code snippet that demonstrates how to use the schema to fetch the agendas.
-        8. Iterate on the strategy schema, values, and Python code using {IterateStrategyTool.name} until your test passes. The test will
+        8. Iterate on the strategy schema, values, and Python code using {
+            TestProposedStrategyTool.name
+        } until your test passes. The test will
             be testing against the expected output you provided in step 2. If you discover the expected output is incorrect, ask
-            for it to be updated with what you think the values should be using the {GetHumanFeedbackTool.name}.
+            for it to be updated with what you think the values should be using the {
+            GetHumanFeedbackTool.name
+        }.
 
         Before presenting the final output, perform your analysis inside <strategy_analysis> tags in your thinking block.
         
@@ -292,7 +299,12 @@ class TownWebsiteAnalyzer:
             name="find_org_agenda_fetching_strategy",
             client=self.client,
             system_prompt=system_prompt,
-            tools=[Bs4SiteScraperTool, GetHumanFeedbackTool, StoreExpectedAgendas],
+            tools=[
+                Bs4SiteScraperTool,
+                GetHumanFeedbackTool,
+                StoreExpectedAgendas,
+                TestProposedStrategyTool,
+            ],
             thinking={"type": "enabled", "budget_tokens": 2000},
         )
         result = await handler.run(
