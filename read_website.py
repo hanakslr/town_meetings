@@ -233,20 +233,21 @@ class TownWebsiteAnalyzer:
         Public municipal bodies are required by law to publish their meeting agendas. These will
         only ever be referred to as "agendas" or "minutes" and will be available somewhere on their webpage, either directly or via links.
 
-        Your goal is to generate a machine-consumable strategy for locating this group's meeting agendas. 
+        Your goal is to generate a machine-consumable strategy for locating this group's meeting agendas. It should prioritize flexibility
+        and using logic to find the required agendas, over hardcoding specific values.
         This output will be passed directly to a downstream code system. Downstream, BeautifulSoup (among other tools) could be used for retrieval.
         Follow these steps:
 
         1. Analyze the provided information.
         2. Determine the most appropriate strategy type and name.
         3. Define a minimal yet complete schema for fetching the data. It should be as generic as possible, only as specific to this case as it needs to be.
-        4. Fetch all meeting agendas from October 2024 to March 2025 and give them to the {
+        4. Fetch all existing meeting agendas and store them using the {
             StoreExpectedAgendas.name
-        }.
+        } tool.
         5. Write a concise Python code snippet that demonstrates how to use the schema to fetch the agendas.
-        6. Iterate on the strategy schema, values, and Python code using {
+        6. Iterate on the strategy schema, values, and Python code using the {
             TestProposedStrategyTool.name
-        } until your test passes. The test will
+        } tool until your test passes. The test will
             be testing against the expected output you provided in step 3. If you discover the expected output is incorrect, ask
             for it to be updated with what you think the values should be using the {
             GetHumanFeedbackTool.name
