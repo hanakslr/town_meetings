@@ -213,6 +213,18 @@ wheels = [
 ]
 
 [[package]]
+name = "deepdiff"
+version = "8.4.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "orderly-set" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7f/2f/232a9f6d88a59526347cb483ec601d878ad41ab30ee4f2fba4aca1d5a10e/deepdiff-8.4.2.tar.gz", hash = "sha256:5c741c0867ebc7fcb83950ad5ed958369c17f424e14dee32a11c56073f4ee92a", size = 515380 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/03/810d2e70a6944eddc826deb7b68879d8de109369040b25eeb58cdd64d94c/deepdiff-8.4.2-py3-none-any.whl", hash = "sha256:7e39e5b26f3747c54f9d0e8b9b29daab670c3100166b77cc0185d5793121b099", size = 87610 },
+]
+
+[[package]]
 name = "distro"
 version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -457,6 +469,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/b9/3b/1599631f59024b75c4d6e3069f4502409970a336647502aaf6b62fb7ac98/multidict-6.4.3-cp313-cp313t-win32.whl", hash = "sha256:0ecdc12ea44bab2807d6b4a7e5eef25109ab1c82a8240d86d3c1fc9f3b72efd5", size = 41775 },
     { url = "https://files.pythonhosted.org/packages/e8/4e/09301668d675d02ca8e8e1a3e6be046619e30403f5ada2ed5b080ae28d02/multidict-6.4.3-cp313-cp313t-win_amd64.whl", hash = "sha256:7146a8742ea71b5d7d955bffcef58a9e6e04efba704b52a460134fefd10a8208", size = 45946 },
     { url = "https://files.pythonhosted.org/packages/96/10/7d526c8974f017f1e7ca584c71ee62a638e9334d8d33f27d7cdfc9ae79e4/multidict-6.4.3-py3-none-any.whl", hash = "sha256:59fe01ee8e2a1e8ceb3f6dbb216b09c8d9f4ef1c22c4fc825d045a147fa2ebc9", size = 10400 },
+]
+
+[[package]]
+name = "orderly-set"
+version = "5.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/20/6afbd546526c8b97ca1f53cfef395c59c403bb7f1e9fd54cbfae141c9d77/orderly_set-5.4.0.tar.gz", hash = "sha256:c8ff5ba824abe4eebcbbdd3f646ff3648ad0dd52239319d90056d8d30b6cccdd", size = 20934 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/65/16/f731425dfd047513aac23e70ae527050868afc823585f52d3e39eb70f2e2/orderly_set-5.4.0-py3-none-any.whl", hash = "sha256:f0192a7f9ae3385b587b71688353fae491d1ca45878496eb71ea118be1623639", size = 12340 },
 ]
 
 [[package]]
@@ -719,6 +740,7 @@ dependencies = [
     { name = "aiohttp" },
     { name = "anthropic" },
     { name = "bs4" },
+    { name = "deepdiff" },
     { name = "mcp" },
     { name = "prompt-toolkit" },
     { name = "python-dotenv" },
@@ -736,8 +758,9 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.11.16" },
     { name = "anthropic", specifier = ">=0.49.0" },
     { name = "bs4", specifier = ">=0.0.2" },
+    { name = "deepdiff", specifier = ">=8.4.2" },
     { name = "mcp", specifier = ">=1.6.0" },
-    { name = "prompt-toolkit", specifier = ">=3.0.51" },
+    { name = "prompt-toolkit", specifier = ">=3.0.43" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "requests", specifier = ">=2.32.3" },
 ]

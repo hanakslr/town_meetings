@@ -238,16 +238,16 @@ class TownWebsiteAnalyzer:
         Follow these steps:
 
         1. Analyze the provided information.
-        2. Fetch all agendas from October 2024 to March 2025 and give them to the {
-            StoreExpectedAgendas.name
-        }.
         2. Determine the most appropriate strategy type and name.
         3. Define a minimal yet complete schema for fetching the data. It should be as generic as possible, only as specific to this case as it needs to be.
+        4. Fetch all meeting agendas from October 2024 to March 2025 and give them to the {
+            StoreExpectedAgendas.name
+        }.
         5. Write a concise Python code snippet that demonstrates how to use the schema to fetch the agendas.
-        8. Iterate on the strategy schema, values, and Python code using {
+        6. Iterate on the strategy schema, values, and Python code using {
             TestProposedStrategyTool.name
         } until your test passes. The test will
-            be testing against the expected output you provided in step 2. If you discover the expected output is incorrect, ask
+            be testing against the expected output you provided in step 3. If you discover the expected output is incorrect, ask
             for it to be updated with what you think the values should be using the {
             GetHumanFeedbackTool.name
         }.
@@ -257,7 +257,6 @@ class TownWebsiteAnalyzer:
         The fetching_strategy should be a JSON object like this:
         <formatting>
         {{
-            "strategy_type": "shared" | "individual" | "not_found", # or something else that makes sense
             "strategy_name": "yearly_archive" | "embedded-html-links" | "filter-table" # these are examples. Make up something that makes sense.
             "schema": {{
                 "field_1": "description of how this field is used",
@@ -268,14 +267,7 @@ class TownWebsiteAnalyzer:
                 "field_2": "..."
             }},
             "notes": "Optional clarifications or edge cases",
-            "code_snippet": string,
-            "fetched_agendas": [
-                {"date": "YYYY-MM-DD",
-                    "url": "agenda_url"
-                },
-                ...
-            ],
-            "unit_test": string
+            "code": string,
         }}
         </formatting>
 
