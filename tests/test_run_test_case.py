@@ -1,5 +1,5 @@
 import pytest
-from strategies.save import save_fetching_strategy
+from strategies.save import save_fetching_strategy, save_params
 from tools.iterate_strategy import run_test_case
 
 fetching_strategy = {
@@ -33,5 +33,12 @@ async def test_run_test_case():
     print(results)
 
 
+## These are just for local testing to avoid calling the LLM and running through the whole workflow when not needed
+@pytest.mark.skip
 async def test_dump_strategy():
     save_fetching_strategy(fetching_strategy)
+
+
+@pytest.mark.skip
+async def test_dump_params():
+    save_params("fake_committee", fetching_strategy)

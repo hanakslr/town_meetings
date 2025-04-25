@@ -47,7 +47,7 @@ class StoreExpectedAgendas(Tool):
         name = params.get("name")
         meetings = params.get("meetings")
 
-        expected_output_dir = Path("strategies/fixtures/expected")
+        expected_output_dir = Path("strategies/expected")
 
         file_path = expected_output_dir / f"{name.replace(' ', '_').lower()}.json"
 

@@ -17,12 +17,14 @@ def pytest_addoption(parser):
 
 def pytest_generate_tests(metafunc):
     # Find all strategy directories
-    strategies_dir = Path("strategies/fixtures")
+    strategies_dir = Path("strategies")
     if not strategies_dir.exists():
         pytest.skip("No strategies directory found")
 
+    strategies_inputs_dir = Path("strategies/inputs")
+
     # Get all strategy names from the directory structure
-    strategy_names = [d.name for d in strategies_dir.iterdir() if d.is_dir()]
+    strategy_names = [d.name for d in strategies_inputs_dir.iterdir() if d.is_dir()]
 
     print(f"Found strategy names: {strategy_names}")
 
@@ -38,12 +40,14 @@ def pytest_generate_tests(metafunc):
     test_ids = []
 
     for strategy_name in strategy_names:
-        strategy_dir = Path(strategies_dir / strategy_name)
-        group_names = [d.name for d in strategy_dir.iterdir() if d.is_dir()]
+        strategy_dir = Path(strategies_inputs_dir / strategy_name)
+        # Find all params files matching the pattern
+        param_files = list(strategy_dir.glob("*_params.json"))
+        group_names = [f.stem.replace("_params", "") for f in param_files]
 
         for group in group_names:
             expected_path = strategies_dir / "expected" / f"{group}.json"
-            params_path = strategy_dir / group / "params.json"
+            params_path = strategy_dir / f"{group}_params.json"
             if expected_path.exists() and params_path.exists():
                 with open(expected_path) as f:
                     expected_output = json.load(f)

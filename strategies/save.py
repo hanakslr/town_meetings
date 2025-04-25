@@ -3,6 +3,8 @@ Functionality and helper classes (CST Transformers) to dump a json strategy and 
 snippet into a useable class.
 """
 
+import os
+import json
 import libcst as cst
 from libcst import (
     Arg,
@@ -161,6 +163,22 @@ class AddFromImportTransformer(cst.CSTTransformer):
         )
         new_stmt = SimpleStatementLine(body=[new_import])
         return updated_node.with_changes(body=[new_stmt] + list(updated_node.body))
+
+
+def save_params(machine_committee_name: str, fetch_result: dict[str, Any]):
+    """
+    The params provided need to get saved as inputs for the FetchingStrategy, so that
+    when we run our test suite this input will get tested, and if we make changes to a
+    strategy we know there are no regressions.
+    """
+    strategy_name = fetch_result.get("strategy_name")
+    output_dir = Path(f"strategies/inputs/{strategy_name}")
+    os.makedirs(output_dir, exist_ok=True)
+
+    file_path = output_dir / f"{machine_committee_name}_params.json"
+
+    with open(file_path, "w") as f:
+        json.dump(fetch_result.get("values"), f, indent=4)
 
 
 def save_fetching_strategy(fetch_result: dict[str, Any]):
