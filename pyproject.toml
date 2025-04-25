@@ -10,6 +10,7 @@ dependencies = [
     "anthropic>=0.49.0",
     "bs4>=0.0.2",
     "deepdiff>=8.4.2",
+    "libcst>=1.7.0",
     "mcp>=1.6.0",
     "prompt_toolkit>=3.0.43",
     "python-dotenv>=1.1.0",

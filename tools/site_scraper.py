@@ -117,18 +117,8 @@ class Bs4SiteScraperTool(Tool):
                     ):
                         continue
 
-                    # TODO this could be more efficient
-                    if any(
-                        [
-                            prev
-                            for prev in self.previous_urls
-                            if prev.get("url") == href and prev.get("text") == text
-                        ]
-                    ):
-                        print("Skipping previously found URL")
-                    else:
-                        self.previous_urls.append({"url": href, "text": text})
-                        links.append({"url": href, "text": text})
+                    self.previous_urls.append({"url": href, "text": text})
+                    links.append({"url": href, "text": text})
 
                 result["links"] = links
 

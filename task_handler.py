@@ -12,6 +12,17 @@ from anthropic.types import Message, ThinkingConfigParam
 from tools import Tool
 
 
+class CustomJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles non-serializable objects."""
+
+    def default(self, obj):
+        try:
+            return super().default(obj)
+        except TypeError:
+            # Convert non-serializable objects to their string representation
+            return str(obj)
+
+
 class TaskHandler:
     name: str
     client: AsyncAnthropic
@@ -147,14 +158,19 @@ class TaskHandler:
                                 {
                                     "type": "tool_result",
                                     "tool_use_id": item.id,
-                                    "content": json.dumps(result),
+                                    "content": json.dumps(
+                                        result, cls=CustomJSONEncoder
+                                    ),
                                 }
                             ],
                         }
                     )
 
                     print("Assistant:", content)
-                    print("\nResponse:", json.dumps(result, indent=2))
+                    print(
+                        "\nResponse:",
+                        json.dumps(result, cls=CustomJSONEncoder, indent=2),
+                    )
 
                     # Put the cache on the last message
                     messages_with_cache = copy.deepcopy(self.messages)

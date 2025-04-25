@@ -1,8 +1,26 @@
+import libcst as cst
+from libcst import (
+    Arg,
+    ClassDef,
+    FunctionDef,
+    IndentedBlock,
+    Param,
+    Parameters,
+    parse_module,
+    ImportAlias,
+    Name,
+    ImportFrom,
+    Attribute,
+    SimpleStatementLine,
+    MaybeSentinel,
+)
+from libcst.metadata import MetadataWrapper
 import asyncio
 import json
 import os
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from anthropic import AsyncAnthropic
@@ -417,3 +435,118 @@ if __name__ == "__main__":
             json.dump(analyzer.__dict__, f, indent=2, default=lambda o: o.__dict__)
 
         print("Analysis complete.")
+
+
+def store_fetching_strategy(fetch_result: dict[str, Any]):
+    # Store the fetching strategy to a file.
+    strategies_dir = Path("strategies")
+    strategy_name = fetch_result.get("strategy_name")
+    file_path = strategies_dir / f"{strategy_name}.py"
+
+    original_code = fetch_result.get("code")
+    module = parse_module(original_code)
+
+    class WrapFunctionInClassWithAttribute(cst.CSTTransformer):
+        def __init__(
+            self, target_func: str, class_name: str, attr_name: str, attr_value: str
+        ):
+            self.target_func = target_func
+            self.class_name = class_name
+            self.attr_name = attr_name
+            self.attr_value = attr_value
+            self.found_func: cst.FunctionDef | None = None
+
+        def leave_FunctionDef(
+            self, original_node: FunctionDef, updated_node: FunctionDef
+        ) -> cst.RemovalSentinel | None:
+            if original_node.name.value == self.target_func:
+                self.found_func = updated_node
+                return cst.RemoveFromParent()
+            return updated_node
+
+        def leave_Module(
+            self, original_node: cst.Module, updated_node: cst.Module
+        ) -> cst.Module:
+            if not self.found_func:
+                return updated_node
+
+            # Add `self` param
+            new_params = [Param(Name("self"))] + list(self.found_func.params.params)
+            method_with_self = self.found_func.with_changes(
+                params=Parameters(params=new_params)
+            )
+
+            # Create class-level assignment
+            assign = SimpleStatementLine(
+                body=[
+                    cst.Assign(
+                        targets=[cst.AssignTarget(target=Name(self.attr_name))],
+                        value=cst.SimpleString(f'"{self.attr_value}"'),
+                    )
+                ]
+            )
+
+            new_class = ClassDef(
+                name=Name(self.class_name),
+                bases=[Arg(value=Name("FetchingStrategy"))],
+                body=IndentedBlock(body=[assign, method_with_self]),
+            )
+
+            return updated_node.with_changes(body=[new_class] + list(updated_node.body))
+
+    class AddFromImportTransformer(cst.CSTTransformer):
+        def __init__(self, module: str, name: str, alias: str = None):
+            self.module = module
+            self.name = name
+            self.alias = alias
+            self.import_already_exists = False
+
+        def leave_ImportFrom(self, original_node, updated_node):
+            if isinstance(original_node.module, (Name, Attribute)):
+                modname = (
+                    original_node.module.attr.value
+                    if isinstance(original_node.module, Attribute)
+                    else original_node.module.value
+                )
+                if modname == self.module:
+                    for alias in original_node.names:
+                        if isinstance(alias, ImportAlias):
+                            if alias.name.value == self.name:
+                                self.import_already_exists = True
+            return updated_node
+
+        def leave_Module(
+            self, original_node: cst.Module, updated_node: cst.Module
+        ) -> cst.Module:
+            if self.import_already_exists:
+                return updated_node
+
+            new_import = ImportFrom(
+                module=Name(self.module),
+                names=[
+                    ImportAlias(
+                        name=Name(self.name),
+                        asname=cst.AsName(name=Name(self.alias))
+                        if self.alias
+                        else None,
+                    )
+                ],
+                relative=[],
+            )
+            new_stmt = SimpleStatementLine(body=[new_import])
+            return updated_node.with_changes(body=[new_stmt] + list(updated_node.body))
+
+    # Apply the transformer
+    import_transformer = AddFromImportTransformer("strategies", "FetchingStrategy")
+    modified_module = module.visit(import_transformer)
+    class_transformer = WrapFunctionInClassWithAttribute(
+        target_func="get_committee_agendas",
+        class_name=f"{strategy_name.replace('_', ' ').title().replace(' ', '')}",
+        attr_name="name",
+        attr_value=strategy_name
+    )
+    modified_module = modified_module.visit(class_transformer)
+
+    # Write the modified code to file
+    with open(file_path, "w") as f:
+        f.write(modified_module.code)

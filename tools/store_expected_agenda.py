@@ -33,7 +33,7 @@ class StoreExpectedAgendas(Tool):
                                 },
                                 "agenda": {
                                     "type": "string",
-                                    "description": "Link to the agenda itself.",
+                                    "description": "Link to the agenda itself. This could be a URL that show the agenda in HTML or a link to a PDF/other file.",
                                 },
                             },
                         },
@@ -45,10 +45,11 @@ class StoreExpectedAgendas(Tool):
     async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         # TODO probably put some assertions here and check the data
         name = params.get("name")
+        meetings = params.get("meetings")
 
         expected_output_dir = Path("strategies/fixtures/expected")
 
         file_path = expected_output_dir / f"{name.replace(' ', '_').lower()}.json"
 
         with open(file_path, "w") as f:
-            json.dump(params, f, indent=4)
+            json.dump(meetings, f, indent=4)

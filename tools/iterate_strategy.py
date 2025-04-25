@@ -50,7 +50,13 @@ class TestProposedStrategyTool(Tool):
                         "description": "A code snippet that consumes the schema vals. The code snippet should be specific to the strategy but not contain any hard-coded references to this particular committee",
                     },
                 },
-                "required": ["committee_name", "strategy_name", "schema", "values", "code"]
+                "required": [
+                    "committee_name",
+                    "strategy_name",
+                    "schema",
+                    "values",
+                    "code",
+                ],
             },
         }
 
@@ -60,16 +66,19 @@ class TestProposedStrategyTool(Tool):
         committee_name = params.get("committee_name")
 
         expected_output_dir = Path("strategies/fixtures/expected")
-        file_path = expected_output_dir / f"{committee_name.replace(' ', '_').lower()}.json"
+        file_path = (
+            expected_output_dir / f"{committee_name.replace(' ', '_').lower()}.json"
+        )
         if file_path.exists():
             with open(file_path) as f:
                 expected_output = json.load(f)
-        
+
         if not expected_output:
             raise Exception(f"No expected output found at {file_path}")
-        
+
         return await run_test_case(code, values, expected_output)
-        
+
+
 async def run_test_case(code: str, values: dict, expected_output: list) -> dict:
     """
     Executes user-provided scraping code safely, injecting values and comparing result to expected output.
@@ -90,7 +99,7 @@ async def run_test_case(code: str, values: dict, expected_output: list) -> dict:
             "logs": "",
             "exception": f"SyntaxError: {e}",
             "diff": {},
-            "actual_output": None
+            "actual_output": None,
         }
 
     # Step 2: Execute the code safely and call the function
@@ -99,7 +108,7 @@ async def run_test_case(code: str, values: dict, expected_output: list) -> dict:
             exec(code, namespace)
             func = next(
                 (v for v in namespace.values() if isinstance(v, types.FunctionType)),
-                None
+                None,
             )
             if not func:
                 raise RuntimeError("No function found in code snippet")
@@ -109,7 +118,9 @@ async def run_test_case(code: str, values: dict, expected_output: list) -> dict:
         exc = traceback.format_exc()
 
     # Step 3: Compare result
-    diff = {} if output is None else DeepDiff(output, expected_output, ignore_order=True)
+    diff = (
+        {} if output is None else DeepDiff(output, expected_output, ignore_order=True)
+    )
     passed = not bool(diff) and exc is None
 
     return {
@@ -117,5 +128,5 @@ async def run_test_case(code: str, values: dict, expected_output: list) -> dict:
         "logs": stdout.getvalue(),
         "exception": exc,
         "diff": diff,
-        "actual_output": output
+        "actual_output": output,
     }
