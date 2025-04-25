@@ -32,7 +32,6 @@ class WrapFunctionInClassWithAttribute(cst.CSTTransformer):
 
     def __init__(
         self,
-        target_func: str,
         class_name: str,
         attr_name: str,
         attr_value: str,
@@ -41,14 +40,12 @@ class WrapFunctionInClassWithAttribute(cst.CSTTransformer):
     ):
         """
         Args
-            target_func: name of the function we want to wrap
             class_name: name of the class we want to create
             attr_name: name of an attribute to add to the class
             attr_value: value of the attribute for the class
             class_doc: docustring for the class
             method_doc: docustring for the target_func
         """
-        self.target_func = target_func
         self.class_name = class_name
         self.attr_name = attr_name
         self.attr_value = attr_value
@@ -222,9 +219,9 @@ def save_fetching_strategy(fetch_result: dict[str, Any]):
     # Apply the transformer
     import_transformer = AddFromImportTransformer("strategies", "FetchingStrategy")
     modified_module = module.visit(import_transformer)
+    class_name = strategy_name.replace('_', ' ').title().replace(' ', '')
     class_transformer = WrapFunctionInClassWithAttribute(
-        target_func="get_committee_agendas",
-        class_name=f"{strategy_name.replace('_', ' ').title().replace(' ', '')}",
+        class_name=class_name,
         attr_name="name",
         attr_value=strategy_name,
         class_doc=fetch_result.get("notes", None),
@@ -235,3 +232,21 @@ def save_fetching_strategy(fetch_result: dict[str, Any]):
     # Write the modified code to file
     with open(file_path, "w") as f:
         f.write(modified_module.code)
+
+    # Lastly add an import for it at the top of strategies/__init__.py
+    init_path = os.path.join(os.path.dirname(file_path), "__init__.py")
+    with open(init_path, "r") as f:
+        init_module = cst.parse_module(f.read())
+    
+    import_transformer = AddFromImportTransformer(
+        module=strategy_name,
+        name=class_name
+    )
+    modified_init = init_module.visit(import_transformer)
+    
+    with open(init_path, "w") as f:
+        f.write(modified_init.code)
+
+
+    # Lastly add an import for it at the top of strategies/__init__.py
+    
