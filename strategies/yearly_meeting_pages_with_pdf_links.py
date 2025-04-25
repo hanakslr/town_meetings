@@ -12,8 +12,9 @@ class YearlyMeetingPagesWithPdfLinks(FetchingStrategy):
 
     name = "yearly_meeting_pages_with_pdf_links"
 
-    def get_committee_agendas(
+    def fetch(
         self,
+        *,
         base_url,
         year_links_url,
         year_pattern,
@@ -85,7 +86,7 @@ class YearlyMeetingPagesWithPdfLinks(FetchingStrategy):
                             )
                             all_agendas.append(
                                 {
-                                    "committee": "Catamount Community Forest Committee",
+                                    "committee": "Community Forest Committee",
                                     "year": year_link["year"],
                                     "meeting_date": meeting_date,
                                     "agenda_url": agenda_url,

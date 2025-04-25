@@ -31,15 +31,13 @@ class FetchingStrategy(ABC):
     def get_agendas(
         cls, for_strategy: str, input_params: dict[str, Any]
     ) -> AgendaFetchResult:
-        return FetchingStrategy.registry[for_strategy]().fetch(
-            input_params=input_params
-        )
+        return FetchingStrategy.registry[for_strategy]().fetch(**input_params)
 
 
 class Test(FetchingStrategy):
     name = "fake1"
 
-    def fetch(self, input_params):
+    def fetch(self, *, input_field_1, expected_faker_vals):
         # This is a fake strategy - we are passing in the output in the input for the
         # test harness
-        return input_params["expected_faker_vals"]
+        return expected_faker_vals

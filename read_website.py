@@ -1,4 +1,3 @@
-
 import asyncio
 import json
 import os
@@ -242,15 +241,25 @@ class TownWebsiteAnalyzer:
         This output will be passed directly to a downstream code system. Downstream, BeautifulSoup (among other tools) could be used for retrieval.
         Follow these steps:
 
-        1. Analyze the provided information using the {Bs4SiteScraperTool.name} tool. If there is a tool, or functionality in the site scraper that would
-            be usefule to have. Request that it gets added via the {GetHumanFeedbackTool.name} tool. 
-        2. Fetch all existing meeting agendas for the committee and store them using the {StoreExpectedAgendas.name} tool.
+        1. Analyze the provided information using the {
+            Bs4SiteScraperTool.name
+        } tool. If there is a tool, or functionality in the site scraper that would
+            be usefule to have. Request that it gets added via the {
+            GetHumanFeedbackTool.name
+        } tool. 
+        2. Fetch all existing meeting agendas for the committee and store them using the {
+            StoreExpectedAgendas.name
+        } tool.
         3. Determine an appropriate strategy type and name.
         4. Define a minimal yet complete schema for fetching the data. It should be as generic as possible, only as specific to this case as it needs to be. 
         5. Write a concise Python code snippet that demonstrates how to use the schema to fetch the agendas.
-        6. Iterate on the strategy schema, values, and Python code using the {TestProposedStrategyTool.name} tool until your test passes. The test will
+        6. Iterate on the strategy schema, values, and Python code using the {
+            TestProposedStrategyTool.name
+        } tool until your test passes. The test will
             be testing against the expected output you provided in step 3. If you discover the expected output is incorrect, ask
-            for it to be updated with what you think the values should be using the {GetHumanFeedbackTool.name}.
+            for it to be updated with what you think the values should be using the {
+            GetHumanFeedbackTool.name
+        }.
 
         Before presenting the final output, perform your analysis inside <strategy_analysis> tags in your thinking block.
         
@@ -417,6 +426,3 @@ if __name__ == "__main__":
             json.dump(analyzer.__dict__, f, indent=2, default=lambda o: o.__dict__)
 
         print("Analysis complete.")
-
-
-

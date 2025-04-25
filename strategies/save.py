@@ -2,6 +2,7 @@
 Functionality and helper classes (CST Transformers) to dump a json strategy and code
 snippet into a useable class.
 """
+
 import libcst as cst
 from libcst import (
     Arg,
@@ -15,19 +16,21 @@ from libcst import (
     Name,
     ImportFrom,
     Attribute,
-    SimpleStatementLine
+    SimpleStatementLine,
 )
 from pathlib import Path
 from typing import Any
+
 
 class WrapFunctionInClassWithAttribute(cst.CSTTransformer):
     """
     Given a function name, wrap that function in a new class.
     This is a very specific implementation to the strategy dumping use case.
     """
+
     def __init__(
         self,
-        target_func: str, 
+        target_func: str,
         class_name: str,
         attr_name: str,
         attr_value: str,
@@ -69,10 +72,14 @@ class WrapFunctionInClassWithAttribute(cst.CSTTransformer):
             body=[cst.Expr(value=cst.SimpleString(f'"""{self.method_doc}"""'))]
         )
 
-        # Add `self` param
-        new_params = [Param(Name("self"))] + list(self.found_func.params.params)
+        # Add `self` param, and make the other params keyword only
+        # Change the main function to "fetch" so that it can get called.
         method_with_self = self.found_func.with_changes(
-            params=Parameters(params=new_params),
+            name=cst.Name("fetch"),
+            params=Parameters(
+                params=[Param(Name("self"))],
+                kwonly_params=self.found_func.params.params,
+            ),
             body=IndentedBlock(
                 body=[method_docstring] + list(self.found_func.body.body)
             ),
@@ -114,6 +121,7 @@ class WrapFunctionInClassWithAttribute(cst.CSTTransformer):
 
         return updated_node.with_changes(body=new_body)
 
+
 class AddFromImportTransformer(cst.CSTTransformer):
     def __init__(self, module: str, name: str, alias: str = None):
         self.module = module
@@ -146,16 +154,13 @@ class AddFromImportTransformer(cst.CSTTransformer):
             names=[
                 ImportAlias(
                     name=Name(self.name),
-                    asname=cst.AsName(name=Name(self.alias))
-                    if self.alias
-                    else None,
+                    asname=cst.AsName(name=Name(self.alias)) if self.alias else None,
                 )
             ],
             relative=[],
         )
         new_stmt = SimpleStatementLine(body=[new_import])
         return updated_node.with_changes(body=[new_stmt] + list(updated_node.body))
-    
 
 
 def save_fetching_strategy(fetch_result: dict[str, Any]):
