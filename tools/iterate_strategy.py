@@ -65,7 +65,7 @@ class TestProposedStrategyTool(Tool):
         values = params.get("values")
         committee_name = params.get("committee_name")
 
-        expected_output_dir = Path("strategies/fixtures/expected")
+        expected_output_dir = Path("strategies/expected")
         file_path = (
             expected_output_dir / f"{committee_name.replace(' ', '_').lower()}.json"
         )

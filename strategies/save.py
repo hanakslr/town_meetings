@@ -59,7 +59,7 @@ class WrapFunctionInClassWithAttribute(cst.CSTTransformer):
     def leave_FunctionDef(
         self, original_node: FunctionDef, updated_node: FunctionDef
     ) -> cst.RemovalSentinel | None:
-        if original_node.name.value == self.target_func:
+        if self.found_func is None:
             self.found_func = updated_node
             return cst.RemoveFromParent()
         return updated_node

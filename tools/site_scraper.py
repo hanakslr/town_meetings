@@ -161,11 +161,9 @@ class Bs4SiteScraperTool(Tool):
                     if element.name == "div" and element.find_parent("a") is not None:
                         continue
 
-                    if len(text) > 70 and text not in self.previous_text_blobs:
+                    if len(text) > 30:
                         main_text.append(text)
                         self.previous_text_blobs.append(text)
-                    elif text in self.previous_text_blobs:
-                        print(f"Skipping including {len(text)} prev included chars")
 
                 result["main_text"] = main_text
 

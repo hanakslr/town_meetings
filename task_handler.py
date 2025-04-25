@@ -5,7 +5,7 @@ import signal
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-
+from prompt_toolkit import print_formatted_text, HTML
 from anthropic import NOT_GIVEN, AsyncAnthropic, NotGiven
 from anthropic.types import Message, ThinkingConfigParam
 
@@ -139,7 +139,11 @@ class TaskHandler:
                 tool_name = item.name
                 tool_params = item.input
 
-                print(f"\n\nRunning {tool_name}\n")
+                print_formatted_text(
+                    HTML(
+                        f"<violet>\n\n--------Running {tool_name}-----------\n</violet>"
+                    )
+                )
 
                 if tool_name in self.tools:
                     tool = self.tools[tool_name]
@@ -150,7 +154,12 @@ class TaskHandler:
 
                     result = await tool.execute(tool_params)
 
-                    self.messages.append({"role": "assistant", "content": content})
+                    self.messages.append(
+                        {
+                            "role": "assistant",
+                            "content": content,
+                        }
+                    )
                     self.messages.append(
                         {
                             "role": "user",
@@ -166,9 +175,12 @@ class TaskHandler:
                         }
                     )
 
-                    print("Assistant:", content)
+                    print_formatted_text(HTML("<skyblue>Assistant</skyblue>"))
+                    print(json.dumps(content, cls=CustomJSONEncoder, indent=2))
+                    print("\n")
+
+                    print_formatted_text(HTML("<seagreen>Response</seagreen>"))
                     print(
-                        "\nResponse:",
                         json.dumps(result, cls=CustomJSONEncoder, indent=2),
                     )
 

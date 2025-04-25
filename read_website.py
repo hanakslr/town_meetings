@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from prompt_toolkit import PromptSession
 from prompt_toolkit.validation import ValidationError, Validator
 
-from strategies.save import save_fetching_strategy
+from strategies.save import save_fetching_strategy, save_params
 from task_handler import TaskHandler
 from tools.human_feedback import GetHumanFeedbackTool
 from tools.outputs import AllOrgsOutputTool, OrgMeetingDetailsOutputTool
@@ -253,6 +253,9 @@ class TownWebsiteAnalyzer:
         3. Determine an appropriate strategy type and name.
         4. Define a minimal yet complete schema for fetching the data. It should be as generic as possible, only as specific to this case as it needs to be. 
         5. Write a concise Python code snippet that demonstrates how to use the schema to fetch the agendas.
+        6. Present the proposed schema and snippet for an initial round of human feedback using the {
+            GetHumanFeedbackTool.name
+        }
         6. Iterate on the strategy schema, values, and Python code using the {
             TestProposedStrategyTool.name
         } tool until your test passes. The test will
@@ -280,7 +283,8 @@ class TownWebsiteAnalyzer:
         }}
         </formatting>
 
-        Ensure that your schema is as minimal as possible while still being complete. The code snippet should be specific to the strategy but not contain any hard-coded references to this particular committee. The fetched_agendas should include all agendas from July 2024 to the present. The unit_test should verify the committee's values.
+        Ensure that your schema is as minimal as possible while still being complete. The code snippet should be specific to the strategy but not
+        contain any hard-coded references to this particular committee.
         Your final output should consist only of the JSON object and should not duplicate or rehash any of the work you did in the thinking block.
 
         Begin your analysis now:
@@ -315,6 +319,7 @@ class TownWebsiteAnalyzer:
 
         comittee.fetching_strategy = result
         save_fetching_strategy(result)
+        save_params(comittee.name.replace(" ", "_").lower(), result)
 
     async def run_workflow(self) -> Dict[str, Any]:
         """Run the full town website analysis workflow."""
@@ -369,6 +374,14 @@ class TownWebsiteAnalyzer:
                     await self.find_org_meeting_details(committee)
                 if not committee.fetching_strategy:
                     await self.find_org_agenda_fetching_strategy(committee)
+
+    def leave_FunctionDef(
+        self, original_node: FunctionDef, updated_node: FunctionDef
+    ) -> cst.RemovalSentinel | None:
+        if self.found_func is None:
+            self.found_func = updated_node
+            return cst.RemoveFromParent()
+        return updated_node
 
 
 if __name__ == "__main__":
