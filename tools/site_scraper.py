@@ -43,7 +43,7 @@ class Bs4SiteScraperTool(Tool):
                     },
                     "extract_body_text": {
                         "type": "boolean",
-                        "description": "Whether to extract body-like text from the page. This ignores link-like text or nav-like text.",
+                        "description": "Whether to extract body-like text from the page. This ignores link-like text or nav-like text, if you are looking for something that could be a link make sure to include extract_links.",
                     },
                 },
                 "required": ["url"],

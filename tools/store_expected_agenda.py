@@ -16,7 +16,7 @@ class StoreExpectedAgendas(Tool):
     def get_tool_definition(cls) -> ToolParam:
         return {
             "name": StoreExpectedAgendas.name,
-            "description": f"""Store all the agendas for a certain committee from Oct 2024-March 2025. 
+            "description": f"""Store all the agendas for a certain committee. 
             These will be saved into a fixture file that will be used as the expected results for this committee.""",
             "input_schema": {
                 "type": "object",

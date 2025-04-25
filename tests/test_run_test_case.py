@@ -1,5 +1,5 @@
 import pytest
-from read_website import store_fetching_strategy
+from strategies.save import save_fetching_strategy
 from tools.iterate_strategy import run_test_case
 
 fetching_strategy = {
@@ -34,4 +34,4 @@ async def test_run_test_case():
 
 
 async def test_dump_strategy():
-    store_fetching_strategy(fetching_strategy)
+    save_fetching_strategy(fetching_strategy)
