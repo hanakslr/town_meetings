@@ -492,7 +492,21 @@ def store_fetching_strategy(fetch_result: dict[str, Any]):
                 body=IndentedBlock(body=[assign, method_with_self]),
             )
 
-            return updated_node.with_changes(body=[new_class] + list(updated_node.body))
+            # Insert the class after the last import
+            new_body = []
+            inserted = False
+            for stmt in updated_node.body:
+                if not inserted and not isinstance(
+                    stmt, (cst.SimpleStatementLine, cst.ImportFrom, cst.Import)
+                ):
+                    new_body.append(new_class)
+                    inserted = True
+                new_body.append(stmt)
+
+            if not inserted:
+                new_body.append(new_class)
+
+            return updated_node.with_changes(body=new_body)
 
     class AddFromImportTransformer(cst.CSTTransformer):
         def __init__(self, module: str, name: str, alias: str = None):
@@ -543,7 +557,7 @@ def store_fetching_strategy(fetch_result: dict[str, Any]):
         target_func="get_committee_agendas",
         class_name=f"{strategy_name.replace('_', ' ').title().replace(' ', '')}",
         attr_name="name",
-        attr_value=strategy_name
+        attr_value=strategy_name,
     )
     modified_module = modified_module.visit(class_transformer)
 
