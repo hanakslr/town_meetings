@@ -2,6 +2,16 @@ target-version = "py312"
 
 [lint]
 select = [
+    "E4", "E7", "E9",
     # isort
     "I",
+    # flake8
+    "F",
 ]
+
+[format]
+# Use double quotes for strings
+quote-style = "double"
+# Use spaces around operators
+line-ending = "auto"
+indent-style = "space"

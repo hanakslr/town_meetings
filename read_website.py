@@ -1,34 +1,84 @@
 import asyncio
 import json
 import os
-import re
 from dataclasses import dataclass
 from datetime import datetime
+
 from typing import Any, Dict, Optional
 
-from anthropic import AsyncAnthropic, NotGiven
-from anthropic.types import Message, ToolParam, ToolUseBlock, tool_param
+from anthropic import AsyncAnthropic
+from anthropic.types import ToolUseBlock
 from dotenv import load_dotenv
+from prompt_toolkit import PromptSession
+from prompt_toolkit.validation import ValidationError, Validator
 
-from tools import Tool
-from tools.outputs import CommitteeDetailsOutputTool
+from strategies.save import save_fetching_strategy, save_params
+from task_handler import TaskHandler
+from tools.human_feedback import GetHumanFeedbackTool
+from tools.outputs import AllOrgsOutputTool, OrgMeetingDetailsOutputTool
 from tools.site_scraper import Bs4SiteScraperTool
+from tools.store_expected_agenda import StoreExpectedAgendas
+from tools.iterate_strategy import TestProposedStrategyTool
 
 load_dotenv()
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
-GENERAL_TOOLS = {"scrape_webpage": Bs4SiteScraperTool()}
+GENERAL_TOOLS = {Bs4SiteScraperTool.name: Bs4SiteScraperTool()}
+
+# Predefined skip reasons
+SKIP_REASONS = [
+    "Overview URL is minutes URL",
+    "No meeting information available",
+    "Inactive",
+    "Not important",
+    "Information is outdated",
+    "Other",
+]
+
+
+class SkipReasonValidator(Validator):
+    def validate(self, document):
+        text = document.text.strip()
+        if not text:
+            raise ValidationError(message="Please enter a reason or 'c' to continue")
+        if text.lower() == "c":
+            return
+        try:
+            index = int(text)
+            if index < 1 or index > len(SKIP_REASONS):
+                raise ValidationError(
+                    message=f"Please enter a number between 1 and {len(SKIP_REASONS)} or 'c' to continue"
+                )
+        except ValueError:
+            raise ValidationError(
+                message="Please enter a valid number or 'c' to continue"
+            )
 
 
 @dataclass
-class Committee():
+class Committee:
     name: str
-    url: Optional[str]
-    details: Optional[dict[str, Any]]  = None
+    overview_url: Optional[str]
+    agendas_url: Optional[str]
+    skip_reason: Optional[str]
+    meeting_details: Optional[dict[str, Any]] = None
+    fetching_strategy: Optional[dict[str, Any]] = None
+    details: Optional[dict[str, Any]] = None
+
+    @classmethod
+    def resume_from(cls, data: dict) -> "Committee":
+        """Create a Committee instance from saved data."""
+        try:
+            committee_fields = {field: None for field in cls.__dataclass_fields__}
+            committee_data = {field: data.get(field) for field in committee_fields}
+            return cls(**committee_data)
+        except Exception as e:
+            print(f"Warning: Error processing committee data: {e}")
+            raise
 
 
-class TownWebsiteAnalyzer():
+class TownWebsiteAnalyzer:
     """Main class for analyzing town websites using Claude and tools."""
 
     client: AsyncAnthropic
@@ -38,6 +88,7 @@ class TownWebsiteAnalyzer():
     state: str
 
     website_url: Optional[str]
+    agendas_url: Optional[str]
     committees: Optional[list[Committee]]
 
     def __init__(self, town_name: str, state: str):
@@ -46,6 +97,7 @@ class TownWebsiteAnalyzer():
         self.town_name = town_name
         self.state = state
         self.website_url = None
+        self.agendas_url = None
         self.committees = None
 
     @property
@@ -54,7 +106,8 @@ class TownWebsiteAnalyzer():
             "town_name": self.town_name,
             "state": self.state,
             "website_url": self.website_url,
-            "committees": self.committees
+            "agendas_url": self.agendas_url,
+            "committees": self.committees,
         }
 
     def resume_from(self, previous_result):
@@ -62,102 +115,9 @@ class TownWebsiteAnalyzer():
             if key == "committees" and value is not None:
                 self.committees = []
                 for c in value:
-                    committee_data = {
-                        "name": c["name"],
-                        "url": c["url"],
-                    }
-                    if "details" in c:
-                        committee_data["details"] = c["details"]
-                    self.committees.append(Committee(**committee_data))
+                    self.committees.append(Committee.resume_from(c))
             elif hasattr(self, key):
                 setattr(self, key, value)
-
-    async def handle_tool_calls(
-        self, tools: dict[str,Tool], message: Message, previous_messages=Optional[list[Message]], 
-    ):
-        """Handle any tool calls in a Claude message."""
-        if previous_messages is None:
-            previous_messages = []
-
-        content = message.content
-        tool_call_found = False
-
-        # Check if there are tool calls to handle
-        for item in content:
-            if item.type == "tool_use":
-                tool_call_found = True
-
-                tool_name = item.name
-                tool_params = item.input
-
-                self.tool_usage[item.id] = item
-                print(f"Running {tool_name} with {tool_params}")
-
-                if tool_name in tools:
-                    tool = tools[tool_name]
-
-                    # This is our last stop for structured output.
-                    if tool.is_structured_output():
-                        return tool_params
-
-                    result = await tool.execute(tool_params)
-
-                    new_messages = previous_messages.copy()
-
-
-                    new_messages.append({"role": "assistant", "content": content})
-                    new_messages.append(
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "tool_result",
-                                    "tool_use_id": item.id,
-                                    "content": json.dumps(result),
-                                }
-                            ],
-                        }
-                    )
-
-                    print("Assistant:", content)
-                    print("Response:", new_messages[-1] )
-
-
-                    # new_messages_with_last_cached = new_messages.copy()
-                    # new_messages_with_last_cached[-1]["content"][0]["cache_control"] = {"type": "ephemeral"}
-
-                    new_message = await self.client.messages.create(
-                        model="claude-3-7-sonnet-20250219",
-                        max_tokens=4000,
-                        temperature=0,
-                        system="You are an expert in analyzing municipal government websites. You locate information to help keep citizens informed and engaged.",
-                        messages=new_messages,
-                        tools=[tool.get_tool_definition() for tool in tools.values()],
-                        tool_choice={"type": "auto"},
-                    )
-
-                    print(f"Calling again with {new_message}")
-
-                    # Recursively handle any further tool calls
-                    return await self.handle_tool_calls(tools, new_message, new_messages)
-
-        # If no tool calls or we've completed the process, return the final results
-        if not tool_call_found:
-            final_content = " ".join(
-                [item.text for item in content if item.type == "text"]
-            )
-
-            # Try to extract structured data from Claude's response
-            try:
-                # Look for JSON structure in the response
-                json_match = re.search(r"\{.*\}", final_content, re.DOTALL)
-                if json_match:
-                    structured_data = json.loads(json_match.group(0))
-                    return structured_data
-                else:
-                    return {"summary": final_content}
-            except Exception as e:
-                return {"summary": final_content, "error": str(e)}
 
     async def find_town_website(self):
         """Use Claude to find the official website for a town."""
@@ -187,108 +147,179 @@ class TownWebsiteAnalyzer():
     async def find_town_orgs(self):
         try:
             # Initial message to Claude with tools
-            initial_messages = [
-                {
-                    "role": "user",
-                    "content": f"""
-                The official town website for {self.town_name}, {self.state} is {self.website_url}
-                Analyze the town website to find:
-                
-                1. All boards, committees, and commissions
-                2. The URL of a webpage with information about that group.
-                
-                Use the scrape_webpage tool to help with this analysis. Start by examining the main page,
-                then look for navigation elements that might lead to committees or government sections.
+            task_prompt = f"""
+            The official town website for {self.town_name}, {self.state} is {self.website_url}
+            Analyze the town website to find:
+            
+            1. The URL for agendas and/or minutes for all orgs. This is not specific to one org. It may not exist.
+            2. All boards, committees, and commissions
+            3. The URL of a webpage with specific information about that group.
+            
+            Use the {Bs4SiteScraperTool.name} tool to help with this analysis. Start by examining the main page,
+            then look for navigation elements or links that might lead to committees or government sections.
 
-                Each organization may store their information completely differently. 
-                
-                Return your findings as a structured JSON with this format:
-                {{
-                  "committees": [
-                    {{
-                      "name": "Committee Name",
-                      "url": "URL to committee page"
-                    }}
-                  ]
-                }}
-                """,
-                }
-            ]
+            Municipal website may have all of the agendas on a single page, or they may have a single page that links out to each group, or there
+            may be a separate agendas page for each group.
 
-            tools = [tool.get_tool_definition() for tool in GENERAL_TOOLS.values()]
+            Each organization may have a different page structure. 
+            
+            Return your findings using the {AllOrgsOutputTool.name}
+            """
 
-            # Create message with tool that can use BeautifulSoup
-            response = await self.client.messages.create(
-                model="claude-3-7-sonnet-20250219",
-                max_tokens=4000,
-                temperature=0,
-                system="You are an expert in analyzing municipal government websites. Use the provided tools to extract information about town committees. You have access to tools, but only use them when necessary. If a tool is not required, respond as normal.",
-                messages=initial_messages,
-                tools=tools,
-                tool_choice={"type": "auto"},
+            system_prompt = """
+            You are an expert in analyzing municipal government websites. 
+            You have access to tools, but only use them when necessary. 
+            If a tool is not required, respond as normal.
+            """
+
+            handler = TaskHandler(
+                name="find_town_orgs",
+                client=self.client,
+                system_prompt=system_prompt,
+                tools=[Bs4SiteScraperTool, AllOrgsOutputTool],
             )
+            result = await handler.run(task_prompt=task_prompt, max_tokens=4000)
 
-            # Process the message and handle tool calls
-            result = await self.handle_tool_calls(tools, response, initial_messages)
-
-            committees = result.get("committees", None)
-
-            if committees:
-                self.committees = committees
-            else:
-                raise Exception("Could not find committees")
+            self.committees = result.get("committees", None)
+            self.agendas_url = result.get("agendas_url", None)
 
         except Exception as e:
             return {"error": str(e)}
 
-    async def find_org_details(self, comittee: Committee):
+    async def find_org_meeting_details(self, committee: Committee):
+        task_prompt = f"""
+        There is a municipal group, the {committee.name} for {self.town_name}, {self.state}. This is a municipal board, committee, or commission.
+
+        There is an overview page that gives details for the organization at {committee.overview_url}.
+
+        Find the meeting schedule and location for this group.
+
+        Some groups meet regularly and others only meet as needed. If the schedule and location information is not readily available, just leave what cannot 
+        be found empty. If they do meet regularly the information will be easily found. No need to check specific documents.
+
+        Return your findings using the {OrgMeetingDetailsOutputTool.name}
+        """
+
+        system_prompt = "You are an expert in analyzing municipal government websites. Use the provided tools to extract information about town committees. You have access to tools, but only use them when necessary. If a tool is not required, respond as normal."
+
+        handler = TaskHandler(
+            name="find_org_meeting_details",
+            client=self.client,
+            system_prompt=system_prompt,
+            tools=[Bs4SiteScraperTool, OrgMeetingDetailsOutputTool],
+        )
+        result = await handler.run(task_prompt=task_prompt, max_tokens=1000)
+
+        committee.meeting_details = result
+
+    async def find_org_agenda_fetching_strategy(self, comittee: Committee):
         """Given a committee, commission, or board name and its website URL
-        extract details about when it meets and its agendas"""
-        print(f"Finding details for {comittee=}")
+        generate a fetching strategy for its agendas."""
 
-        # Initial message to Claude with tools
-        initial_messages = [
-            {
-                "role": "user",
-                "content": f"""
+        print("Finding details for: ", json.dumps(comittee.__dict__, indent=2))
 
-            The official webpage for the {comittee.name} of {self.town_name}, {self.state} is {comittee.url}. This is a municipal board, committee, or commission.
+        prompt = f"""
+        Your task is to create a fetching strategy for a specific municipal group's meeting agendas.
 
-            Analyze the webpage to find the meeting schedule and location for this group, as well as how and where the agendas are
-            stored. Public municipal bodies are required by law to publish their agendas and your job is to report where they can be found. These will
-            only ever be referred to as "agendas" or "minutes" and will be available somewhere on the page, either directly or via a link.
+        First, review the following information about the municipal group:
+        <overview_url>{{{comittee.overview_url}}}</overview_url>
+        <committee_agendas_url>{{{comittee.agendas_url}}}</committee_agendas_url>
+        <all_orgs_agendas_url>{{{self.agendas_url}}}</all_orgs_agendas_url>
+        <committee_name>{{{comittee.name}}}</committee_name>
+        <town_name>{{{self.town_name}}}</town_name>
+        <state>{{{self.state}}}</state>
+        <meeting_schedule>{{{
+            comittee.meeting_details.get("schedule", "Unknown")
+        }}}</meeting_schedule>
 
-            Some groups meet regularly and others only meet as needed. If the schedule and location information is not readily available, just leave what cannot 
-            be found empty. If they do meet regularly the information will be easily found. No need to check specific documents.
+        Public municipal bodies are required by law to publish their meeting agendas. These will
+        only ever be referred to as "agendas" or "minutes" and will be available somewhere on their webpage, either directly or via links.
 
-            Each group handles this differently.
-            
-            Return your findings using the committee_meeting_times_summary tool.
-            """,
-            }
-        ]
+        Your goal is to generate a machine-consumable strategy for locating this group's meeting agendas. It should prioritize flexibility
+        and using logic to find the required agendas, over hardcoding specific values. It will be used to fetch future meetings, assuming they
+        follow the same posting pattern as previous agendas, so as much knowledge should be preserved in the schema over the code as needed.
+        This output will be passed directly to a downstream code system. Downstream, BeautifulSoup (among other tools) could be used for retrieval.
+        Follow these steps:
 
-        tools: dict[str, Tool] = {
-            **GENERAL_TOOLS,
-            "committee_meeting_times_summary": CommitteeDetailsOutputTool()
+        1. Analyze the provided information using the {
+            Bs4SiteScraperTool.name
+        } tool. If there is a tool, or functionality in the site scraper that would
+            be usefule to have. Request that it gets added via the {
+            GetHumanFeedbackTool.name
+        } tool. 
+        2. Fetch all existing meeting agendas for the committee and store them using the {
+            StoreExpectedAgendas.name
+        } tool.
+        3. Determine an appropriate strategy type and name.
+        4. Define a minimal yet complete schema for fetching the data. It should be as generic as possible, only as specific to this case as it needs to be. 
+        5. Write a concise Python code snippet that demonstrates how to use the schema to fetch the agendas.
+        6. Present the proposed schema and snippet for an initial round of human feedback using the {
+            GetHumanFeedbackTool.name
         }
+        6. Iterate on the strategy schema, values, and Python code using the {
+            TestProposedStrategyTool.name
+        } tool until your test passes. The test will
+            be testing against the expected output you provided in step 3. If you discover the expected output is incorrect, ask
+            for it to be updated with what you think the values should be using the {
+            GetHumanFeedbackTool.name
+        }.
 
-        # Create message with tool that can use BeautifulSoup
-        response = await self.client.messages.create(
-            model="claude-3-7-sonnet-20250219",
-            max_tokens=4000,
-            temperature=0,
-            system="You are an expert in analyzing municipal government websites to help citizens stay informed and engaged on whats happens when. Use the provided tools to extract information about town committees. You have access to tools, but only use them when necessary. If a tool is not required, respond as normal.",
-            messages=initial_messages,
-            tools=[tool.get_tool_definition() for tool in tools.values()],
-            tool_choice={"type": "auto"},
+        Before presenting the final output, perform your analysis inside <strategy_analysis> tags in your thinking block.
+        
+        The fetching_strategy should be a JSON object like this:
+        <formatting>
+        {{
+            "strategy_name": "yearly_archive" | "embedded-html-links" | "filter-table" # these are examples. Make up something that makes sense.
+            "schema": {{
+                "field_1": "description of how this field is used",
+                "field_2": "..."
+            }},
+            "values": {{
+                "field_1": "actual value for this committee",
+                "field_2": "..."
+            }},
+            "notes": "Optional clarifications or edge cases",
+            "code": string,
+        }}
+        </formatting>
+
+        Ensure that your schema is as minimal as possible while still being complete. The code snippet should be specific to the strategy but not
+        contain any hard-coded references to this particular committee.
+        Your final output should consist only of the JSON object and should not duplicate or rehash any of the work you did in the thinking block.
+
+        Begin your analysis now:
+        """
+
+        system_prompt = """
+          You are a web scraping strategist who analyzes municipal websites and proposes machine-consumable strategies for 
+          locating agendas and information about boards and committees. You work for a system that will automatically scrape agendas and minutes for each board or committee
+
+          You are allowed to define a custom schema for each committee or board, based on how their data is structured — but your schema must be programmatically useful.
+
+          Use the provided tools to extract information about town committees. You have access to tools, but only use them when necessary. 
+          If a tool is not required, respond as normal.
+        """
+
+        handler = TaskHandler(
+            name="find_org_agenda_fetching_strategy",
+            client=self.client,
+            system_prompt=system_prompt,
+            tools=[
+                Bs4SiteScraperTool,
+                GetHumanFeedbackTool,
+                StoreExpectedAgendas,
+                TestProposedStrategyTool,
+            ],
+            thinking={"type": "enabled", "budget_tokens": 2000},
+        )
+        result = await handler.run(
+            task_prompt=prompt,
+            max_tokens=8000,
         )
 
-        # Process the message and handle tool calls
-        result = await self.handle_tool_calls(tools, response, initial_messages)
-
-        comittee.details = result
-
+        comittee.fetching_strategy = result
+        save_fetching_strategy(result)
+        save_params(comittee.name.replace(" ", "_").lower(), result)
 
     async def run_workflow(self) -> Dict[str, Any]:
         """Run the full town website analysis workflow."""
@@ -298,17 +329,86 @@ class TownWebsiteAnalyzer():
         if not self.committees:
             await self.find_town_orgs()
 
+        session = PromptSession()
         for committee in self.committees:
-            if not committee.details:
-                await self.find_org_details(committee)
-                await asyncio.sleep(30)
+            if (
+                not committee.meeting_details or not committee.fetching_strategy
+            ) and not committee.skip_reason:
+                # Display committee info and skip reasons
+                print(f"\nCommittee: {committee.name}")
+                print("URL:", committee.overview_url)
+                print("Agenda URL:", committee.agendas_url)
+                print("\nSkip reasons:")
+                for i, reason in enumerate(SKIP_REASONS, 1):
+                    print(f"{i}. {reason}")
+                print("c. Continue with analysis")
+                print("x. Exit")
+
+                # Get user input
+                response = (
+                    (
+                        await session.prompt_async(
+                            "Enter a number to skip or 'c' to continue: ",
+                            validator=SkipReasonValidator(),
+                        )
+                    )
+                    .strip()
+                    .lower()
+                )
+
+                if response == "x":
+                    return
+
+                if response != "c":
+                    index = int(response) - 1
+                    if index == len(SKIP_REASONS) - 1:  # "Other" option
+                        custom_reason = (
+                            await session.prompt_async("Please specify the reason: ")
+                        ).strip()
+                        committee.skip_reason = custom_reason
+                    else:
+                        committee.skip_reason = SKIP_REASONS[index]
+                    continue
+
+                if not committee.meeting_details:
+                    await self.find_org_meeting_details(committee)
+                if not committee.fetching_strategy:
+                    await self.find_org_agenda_fetching_strategy(committee)
+
+    def leave_FunctionDef(
+        self, original_node: FunctionDef, updated_node: FunctionDef
+    ) -> cst.RemovalSentinel | None:
+        if self.found_func is None:
+            self.found_func = updated_node
+            return cst.RemoveFromParent()
+        return updated_node
+
 
 if __name__ == "__main__":
+    import argparse
     import os
 
-    town_name = "Williston"
-    state = "VT"
-    resume_latest = True
+    # Set up argument parser
+    parser = argparse.ArgumentParser(
+        description="Analyze a town website for meeting information."
+    )
+    parser.add_argument("town_name", help="Name of the town to analyze")
+    parser.add_argument("state", help="Two-letter state code (e.g., VT, MA, NY)")
+    parser.add_argument(
+        "--no-resume", action="store_true", help="Do not resume from latest saved state"
+    )
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Validate state code
+    if len(args.state) != 2 or not args.state.isalpha():
+        parser.error("State must be a valid 2-letter code (e.g., VT, MA, NY)")
+
+    # Convert state to uppercase
+    state = args.state.upper()
+    town_name = args.town_name
+    resume_latest = not args.no_resume
 
     # Make a {state}_{town_name} dir if it doesn't already exist
     directory_path = f"output/{state}/{town_name}"
@@ -326,7 +426,7 @@ if __name__ == "__main__":
             if files:
                 latest = max(files, key=os.path.getctime)
                 print(f"Resuming from: {latest}")
-                with open(latest, 'r') as f:
+                with open(latest, "r") as f:
                     previous_result = json.load(f)
                 analyzer.resume_from(previous_result)
 
